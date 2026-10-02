@@ -4,7 +4,7 @@ const path = require('path');
 let BASE = process.env.BASE;
 
 (async () => {
-  const web = BASE ? null : await require('./static-server').serve(path.join(__dirname, '..'));
+  const web = BASE ? null : await require('./static-server').serve(process.env.ROOT || path.join(__dirname, '..'));
   if (web) BASE = web.url + 'index.html';
   const b = await pw.chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 1360, height: 900 } });
@@ -71,8 +71,8 @@ let BASE = process.env.BASE;
   await f.close();
   await p.goto(BASE + '#leads'); await p.reload(); await p.waitForSelector('tbody');
   const s2 = await state();
-  const web = s2.leads.find((l) => l.name === 'Web Visitor');
-  ok('form submission is in the pipeline with source, owner and value', web && web.source === 'Instagram' && s2.accounts.find((a) => a.id === web.ownerId).role === 'bd' && web.value > 0 && web.stageId === s2.config.stages[0].id);
+  const webLead = s2.leads.find((l) => l.name === 'Web Visitor');
+  ok('form submission is in the pipeline with source, owner and value', webLead && webLead.source === 'Instagram' && s2.accounts.find((a) => a.id === webLead.ownerId).role === 'bd' && webLead.value > 0 && webLead.stageId === s2.config.stages[0].id);
 
   // BD sees only own compensation
   await p.click('#btn-logout'); await p.waitForSelector('[data-demo]');

@@ -33,6 +33,12 @@ Demo credentials (Demo & Local modes, password `demo`): `super@lightech.co.id`, 
 | **Sessions** | Types linked to funnel stages; booking a session moves the lead forward automatically. Notes, action items, one-click WhatsApp reminder, assistant auto-assigned. |
 | **Clients** | Deal Won creates a client with program, coach, assistant and period. Session progress, action items, renewal countdown, churn-risk flag. Client portal login. |
 | **Dashboard** | KPIs, funnel conversion, needs-action list, BD leaderboard (SUKA), upcoming sessions, performance by lead source. |
+| **Reports** | 12-month revenue chart against team target, weighted forecast by stage, monthly cohorts (lead → deal), lead-source ROI, coach utilisation (hours, no-show, action-item completion). CSV export and print to PDF. |
+| **Self Compensation** | Commission % on revenue closed, monthly target per BD and bonus % when the target is hit. Same formula for everyone; each BD sees only their own pay line. |
+| **Lead capture form** | Public form per company (`?form=<code>`, add `&src=Instagram` per campaign). Lands in the first stage, valued from the chosen program, auto-assigned to the BD with the fewest open leads. Honeypot, rate limit and duplicate check on the server. |
+| **Import** | Paste from Excel / Google Sheets or upload CSV; columns matched by name (EN/ID), duplicates by WhatsApp number skipped, round-robin assignment. |
+| **Calendar** | Week view of sessions per coach and type, alongside the list view. |
+| **Resilience** | Expired sign-in asks for the password again without losing unsaved edits; offline start keeps the session; failed saves retry automatically. Installable on phones (PWA) in the production package. |
 | **Data** | Cloud (artifact database, real-time) or local browser storage. JSON backup/restore, CSV export, delete example data for go-live. |
 
 ## Project layout
@@ -52,9 +58,12 @@ tests/                      server isolation tests + browser end-to-end for all 
 ## Tests
 
 `npm install && npx playwright install chromium && npm test` runs:
-- `tests/server.test.js`: 25 checks on the API (tenant isolation, password redaction, governance rules, lockout, suspension, audit)
-- `tests/e2e-server.js`: 17 browser checks against the real `server/Code.gs` through an in-memory Apps Script harness (also runs against the built package: `BASE=file://$PWD/dist/alpha/index.html`)
+- `tests/server.test.js`: 60 API checks: tenant isolation, least-privilege visibility per role, Owner and Lightech-admin protection, input validation, lead form spam guards, lockout, suspension, audit
+- `tests/e2e-server.js`: 25 browser checks against the real `server/Code.gs` through an in-memory Apps Script harness, including session expiry and offline start
+- `tests/e2e-features.js`: 25 checks for reports, compensation, import, calendar and the public lead form (desktop and phone)
 - `tests/e2e-local-cloud.js local|cloud`: white-label flows, console, language toggle, suspension, data integrity when re-opening a company
+
+Browser tests serve the app over a local HTTP server. Run them against the deploy package with `ROOT=$PWD/dist/alpha npm run test:e2e`.
 
 ## Governance
 
@@ -63,6 +72,6 @@ Security, data protection (UU PDP) and change management: see [GOVERNANCE.md](GO
 ## Roadmap
 
 1. **Production hosting**: own domain per company (`crm.alphaleaders.id`), Supabase auth + row-level security per tenant.
-2. **Automation**: WhatsApp API reminders (H-1), Meta Ads lead webhook, round-robin BD assignment (n8n).
+2. **Automation**: WhatsApp API reminders (H-1), Meta Lead Ads webhook straight into the capture endpoint.
 3. **AI**: automatic session summaries and client progress reports.
 4. **Billing for Lightech**: plan per company, usage dashboard in the console.

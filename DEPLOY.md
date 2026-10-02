@@ -52,7 +52,8 @@ Di cPanel → **File Manager** → `public_html/`:
    - centang *example data* hanya untuk demo
 4. Kirim ke owner AlphaLeaders: link **`https://lightech.co.id/alpha/#alphaleaders`** + email + password, lewat kanal privat (WA pribadi, bukan grup).
 5. ✅ Cek: buka link itu di jendela incognito. Yang muncul hanya brand AlphaLeaders.
-6. **Sebelum data asli masuk:**
+6. **Opsional: form lead publik.** Owner → Settings → *Lead capture form* → centang *Form is live*. Link `https://lightech.co.id/alpha/?form=alphaleaders` bisa dipasang di bio Instagram / landing page iklan (tambah `&src=Meta Ads` per kampanye).
+7. **Sebelum data asli masuk:**
    - matikan *demo sign-in* di Settings company
    - klik *Delete example data*
 
@@ -72,4 +73,5 @@ Kalau ada masalah: rename `alpha` → `alpha_failed`, lalu `alpha_backup_YYYYMMD
 | Backup data | Google Sheet → File → Version history (otomatis). Tambahan mingguan: File → Download → .xlsx ke folder arsip. |
 | Akses Sheet | Hanya Owner + 1 IT backup. Staf company **tidak** perlu akses Sheet, semuanya lewat aplikasi. |
 | Kapasitas | Nyaman sampai ±20.000 baris (puluhan company kecil-menengah). Lewat itu, migrasi ke Supabase/Postgres (roadmap). |
-| Monitoring | Lightech Console → **Audit log**: login gagal beruntun = sinyal percobaan masuk. |
+| Monitoring | Lightech Console → **Audit log**: login gagal beruntun = sinyal percobaan masuk; `capture` = lead dari form publik. |
+| Install di HP | Buka link di Chrome/Safari → *Add to Home Screen*. Tampil seperti aplikasi (PWA). |

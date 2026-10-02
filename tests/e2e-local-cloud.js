@@ -7,7 +7,7 @@ const MODE = process.argv[2] || 'local';
 // Any check printed as `false` fails the run.
 let failed = false; const log0 = console.log; console.log = (...a) => { if (a.some((x) => x === false)) failed = true; log0(...a); };
 (async () => {
-  const web = BASE ? null : await require('./static-server').serve(path.join(__dirname, '..'));
+  const web = BASE ? null : await require('./static-server').serve(process.env.ROOT || path.join(__dirname, '..'));
   if (web) BASE = web.url + 'index.html';
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 1360, height: 900 } });

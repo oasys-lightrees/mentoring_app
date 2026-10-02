@@ -10,7 +10,7 @@ How Lightrees Mentoring CRM meets good corporate governance (GCG) expectations f
 | **Accountability** | Clear owner for every decision and record | Each lead has a PIC; each client has a coach + assistant; Owner role per company; Lightech Super Admin vs Admin |
 | **Responsibility** | Protect client data | Server-side sign-in, salted SHA-256 password hashes never sent to browsers, 5-attempt lockout, 6-hour sessions, security headers |
 | **Independence** | Companies cannot see or influence each other | Tenant isolation enforced on the server for every read and write; login code & suspension controlled by Lightech only |
-| **Fairness** | Same rules for everyone, measured on results | Role-based access matrix; leaderboard on revenue closed (SUKA / Self Compensation) from the same data for all |
+| **Fairness** | Same rules for everyone, measured on results | Role-based access matrix; leaderboard on revenue closed (SUKA); Self Compensation computed by one published formula, each BD sees their own pay line |
 
 ## 2. Roles & access (RACI)
 
@@ -20,6 +20,7 @@ How Lightrees Mentoring CRM meets good corporate governance (GCG) expectations f
 | Company branding, funnel, programs | C | C | **A/R** | R | – | – |
 | User accounts & roles | C | C | **A/R** | R | – | – |
 | Leads & sessions | – | – | A | R | **R** (own scope) | – |
+| Commission targets & rates | – | – | **A/R** | R | I (own pay line) | – |
 | Client program data | – | – | A | R | R (own clients) | View own |
 | Audit review | **A/R** | R | R (own company, roadmap) | – | – | – |
 
@@ -31,7 +32,8 @@ A = accountable, R = responsible, C = consulted, I = informed.
 |---|---|
 | Purpose limitation: data only for coaching sales & delivery | ✅ Fields limited to contact, pipeline and program data |
 | Data minimisation | ✅ No ID numbers, no payment data stored |
-| Access control & confidentiality | ✅ Server-side RBAC + tenant isolation |
+| Access control & confidentiality | ✅ Server-side RBAC + tenant isolation; least privilege inside a company: BDs see other BDs' leads only as numbers (no names, phones, notes), clients see only their own record |
+| Lawful collection | ✅ Public lead form states the purpose under the submit button; only collected when the company switches the form on |
 | Integrity & traceability | ✅ Audit log, stage history |
 | Data portability / subject access | ✅ JSON backup and CSV export per company |
 | Deletion on request | ✅ Delete lead / client / account; delete company (Super Admin) |

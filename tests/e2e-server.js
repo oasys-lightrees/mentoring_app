@@ -6,7 +6,7 @@ const API = 'https://api.example.test/exec';
 let BASE = process.env.BASE;
 
 (async () => {
-  const web = BASE ? null : await require('./static-server').serve(path.join(__dirname, '..'));
+  const web = BASE ? null : await require('./static-server').serve(process.env.ROOT || path.join(__dirname, '..'));
   if (web) BASE = web.url + 'index.html';
   const srv = createServer(); srv.setup();
   const adminPw = srv.logs.find((l) => l.includes('one-time password')).match(/one-time password: (\S+)/)[1];
