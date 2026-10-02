@@ -3,9 +3,11 @@ let pw; try { pw = require('playwright'); } catch (e) { pw = require('/opt/node-
 const path = require('path');
 const { createServer } = require('./gas-harness');
 const API = 'https://api.example.test/exec';
-const BASE = process.env.BASE || ('file://' + path.join(__dirname, '..', 'index.html'));
+let BASE = process.env.BASE;
 
 (async () => {
+  const web = BASE ? null : await require('./static-server').serve(path.join(__dirname, '..'));
+  if (web) BASE = web.url + 'index.html';
   const srv = createServer(); srv.setup();
   const adminPw = srv.logs.find((l) => l.includes('one-time password')).match(/one-time password: (\S+)/)[1];
   const b = await pw.chromium.launch();
@@ -58,7 +60,8 @@ const BASE = process.env.BASE || ('file://' + path.join(__dirname, '..', 'index.
   ok('BD can still sign in after the owner saved config (hashes kept)', true);
   await p.goto(BASE + '#leads'); await p.waitForSelector('tbody');
   const rows = await p.$$eval('tbody tr.clickable', (r) => r.length);
-  ok(`BD sees only own leads (${rows})`, rows > 0 && rows < 25);
+  const allLeads = srv.post({ action: 'list', token: own.token, collection: 'ws/' + own.session.wsId + '/leads' }).docs.length;
+  ok(`BD sees only own leads (${rows} of ${allLeads})`, rows > 0 && rows < allLeads / 2);
   const bdView = await p.evaluate(() => { const st = window.__mcrm.state; const r = st.leads.filter((l) => l.restricted); return { restricted: r.length, leaked: r.some((l) => l.name || l.phone) }; });
   ok(`server sends other BDs' leads as numbers only (${bdView.restricted}), no names or phones`, bdView.restricted > 0 && !bdView.leaked);
   await p.goto(BASE + '#dashboard'); await p.waitForSelector('.kpis');
@@ -120,4 +123,5 @@ const BASE = process.env.BASE || ('file://' + path.join(__dirname, '..', 'index.
   ok('no page errors', errs.length === 0);
   console.log(`\n${n} browser checks passed`);
   await b.close();
+  if (web) web.close();
 })().catch((e) => { console.error(e); process.exit(1); });

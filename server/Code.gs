@@ -25,7 +25,7 @@ const ADMIN_EMAIL = 'super@lightech.co.id';
 const SESSION_HOURS = 6;              // token lifetime (CacheService max is 6 h)
 const MAX_FAILED_LOGINS = 5;          // per email, then locked for LOCK_MINUTES
 const LOCK_MINUTES = 15;
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 // ───────────────────────────────────────────────────────── entry points
 function doPost(e) {
@@ -45,6 +45,7 @@ function handle_(req) {
   if (a === 'ping') return { ok: true, version: VERSION };
   if (a === 'brand') return brand_(req);
   if (a === 'login') return login_(req);
+  if (a === 'capture') return capture_(req);
   const sess = session_(req.token);
   if (!sess) return { ok: false, error: 'auth', message: 'Session expired. Please sign in again.' };
   switch (a) {
@@ -157,9 +158,66 @@ function brand_(req) {
   if (c.demoLogin) (w.data.accounts || []).forEach(function (a) { if (a.active !== false && !byRole[a.role]) byRole[a.role] = { id: a.id, name: a.name, role: a.role, email: a.email }; });
   return {
     ok: true, id: w.id, slug: slugOf_(w), status: w.data.status || 'active', name: w.data.name,
-    config: { brandName: c.brandName, tagline: c.tagline, accent: c.accent, labels: c.labels, demoLogin: !!c.demoLogin, stages: [], sessionTypes: [], sources: [], lostReasons: [] },
+    config: { brandName: c.brandName, tagline: c.tagline, accent: c.accent, labels: c.labels, demoLogin: !!c.demoLogin, publicForm: !!c.publicForm, stages: [], sessionTypes: [], sources: [], lostReasons: [] },
+    programs: c.publicForm ? (w.data.programs || []).map(function (p) { return { id: p.id, name: p.name }; }) : [],
     chips: Object.keys(byRole).map(function (k) { return byRole[k]; })
   };
+}
+
+// ───────────────────────────────────────────────────────── public lead form
+// Anyone can submit; only to a company that switched its form on. Spam guards: honeypot field, per-company and
+// per-phone rate limits, field length caps. New leads are assigned round-robin to the BD with the fewest open leads.
+const CAPTURE_PER_10_MIN = 30;
+function capture_(req) {
+  if (req.website) return { ok: true }; // honeypot filled in: a bot. Pretend success, store nothing.
+  const slug = String(req.slug || '').trim().toLowerCase();
+  const clip = function (v, n) { return String(v == null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n); };
+  const name = clip(req.name, 80), phone = clip(req.phone, 20).replace(/[^\d+]/g, '');
+  if (!name || phone.replace(/\D/g, '').length < 8) return { ok: false, error: 'invalid', message: 'Name and a valid WhatsApp number are required.' };
+  const c = cache_();
+  const n = Number(c.get('cap:' + slug) || 0);
+  if (n >= CAPTURE_PER_10_MIN) return { ok: false, error: 'busy', message: 'Too many submissions. Please try again later.' };
+  c.put('cap:' + slug, String(n + 1), 600);
+  const digits = phone.replace(/\D/g, '').replace(/^0/, '62');
+  if (c.get('capp:' + slug + ':' + digits)) return { ok: true, duplicate: true }; // double-click / resubmit
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const store = load_();
+    const w = metas_(store).filter(function (m) { return slugOf_(m) === slug; })[0];
+    if (!w || w.data.status === 'suspended' || !(w.data.config || {}).publicForm) return { ok: false, error: 'closed', message: 'This form is not available.' };
+    const cfg = w.data.config, base = 'ws/' + w.id;
+    const leads = store.rows.filter(function (r) { return !r.deleted && r.parent === base + '/leads'; }).map(function (r) { return JSON.parse(r.json); });
+    const norm = function (x) { return String(x || '').replace(/\D/g, '').replace(/^0/, '62'); };
+    if (leads.some(function (l) { return norm(l.phone) === digits; })) { audit_('web form', w.id, 'capture_duplicate', '', name); return { ok: true, duplicate: true }; }
+    const stages = cfg.stages || [];
+    const first = stages.filter(function (x) { return x.type === 'open'; })[0] || stages[0] || { id: 'new' };
+    const openIds = {}; stages.forEach(function (x) { if (x.type === 'open') openIds[x.id] = 1; });
+    const owner = pickOwner_(w.data.accounts || [], leads, openIds);
+    const prog = (w.data.programs || []).filter(function (p) { return p.id === req.programId; })[0];
+    const src = (cfg.sources || []).indexOf(req.source) >= 0 ? req.source : 'Website form';
+    const now = new Date(), iso = now.toISOString();
+    const lead = {
+      id: 'L' + Utilities.getUuid().replace(/-/g, '').slice(0, 12), name: name, phone: phone, email: clip(req.email, 120), company: clip(req.company, 120),
+      source: src, ownerId: owner, programId: prog ? prog.id : '', value: prog ? Number(prog.price) || 0 : 0, stageId: first.id,
+      nextAction: 'WhatsApp follow-up (web form)', nextActionDate: Utilities.formatDate(now, 'Asia/Jakarta', 'yyyy-MM-dd'),
+      notes: clip(req.message, 1000), createdAt: iso, updatedAt: iso, createdBy: 'web-form',
+      history: [{ at: iso, from: null, to: first.id, note: 'Web form', by: 'web-form' }]
+    };
+    writeDocs_(store, [{ op: 'set', path: base + '/leads/' + lead.id, data: lead }], 'web form');
+    audit_('web form', w.id, 'capture', base + '/leads/' + lead.id, name + ' → ' + owner);
+    c.put('capp:' + slug + ':' + digits, '1', 600);
+    return { ok: true };
+  } finally { lock.releaseLock(); }
+}
+// Round-robin by workload: the active BD with the fewest open leads; falls back to the Owner.
+function pickOwner_(accounts, leads, openIds) {
+  const bds = accounts.filter(function (a) { return a.role === 'bd' && a.active !== false; });
+  const pool = bds.length ? bds : accounts.filter(function (a) { return a.role === 'superadmin' && a.active !== false; });
+  if (!pool.length) return '';
+  const load = {}; pool.forEach(function (a) { load[a.id] = 0; });
+  leads.forEach(function (l) { if (openIds[l.stageId] && load[l.ownerId] != null) load[l.ownerId]++; });
+  return pool.slice().sort(function (a, b) { return load[a.id] - load[b.id]; })[0].id;
 }
 
 // ───────────────────────────────────────────────────────── authorization

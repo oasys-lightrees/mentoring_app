@@ -124,7 +124,7 @@
   let pme = null;       // signed-in Lightech admin
   let drawerState = null;
   const consoleStats = {};
-  const ui = { period: '90', pipeOwner: '', pipeSearch: '', leadSearch: '', leadStage: '', leadOwner: '', leadSource: '', sessFilter: 'upcoming', sessType: '', sessMentor: '', clientSearch: '', clientStatus: 'active', clientCoach: '' };
+  const ui = { period: '90', pipeOwner: '', pipeSearch: '', leadSearch: '', leadStage: '', leadOwner: '', leadSource: '', sessFilter: 'upcoming', sessType: '', sessMentor: '', clientSearch: '', clientStatus: 'active', clientCoach: '', repMonth: '', sessView: 'list', weekStart: '' };
 
   const slugOf = (m) => m.slug || slugify(m.preset && window.PRESETS[m.preset] ? m.preset : m.name);
   const tenantBySlug = (s) => (s ? wsIndex.find((w) => slugOf(w) === s) : null);
@@ -330,7 +330,7 @@
   }
 
   // Server backend (Google Apps Script API): sign-in, tenant isolation and audit happen on the server.
-  const ROUTES = ['dashboard', 'pipeline', 'leads', 'sessions', 'clients', 'team', 'settings', 'portal', 'companies', 'admins', 'audit'];
+  const ROUTES = ['dashboard', 'pipeline', 'leads', 'sessions', 'clients', 'team', 'settings', 'portal', 'reports', 'companies', 'admins', 'audit'];
   function makeRemoteBackend(url) {
     const K_TOKEN = 'mcrm:token';
     const KINDS = ['leads', 'sessions', 'clients'];
@@ -590,6 +590,8 @@
     d.slug = slugOf(d);
     d.status = d.status || 'active';
     if (d.config.demoLogin == null) d.config.demoLogin = true;
+    if (d.config.publicForm == null) d.config.publicForm = false;
+    if (!d.config.commission) d.config.commission = { rate: 10, target: 0, bonus: 0 };
     return d;
   }
 
@@ -685,6 +687,40 @@
         }
       }
       d.leads.push(lead);
+    }
+    // Twelve months of closed history, so reports, cohorts and compensation have a real trend to show.
+    const nowD = new Date(now);
+    for (let m = 0; m < 12; m++) {
+      const mStart = new Date(nowD.getFullYear(), nowD.getMonth() - m, 1).getTime();
+      const mEnd = m === 0 ? now - 3600000 : new Date(nowD.getFullYear(), nowD.getMonth() - m + 1, 1).getTime() - 3600000;
+      if (mEnd <= mStart) continue;
+      const wins = m === 0 ? 1 + Math.floor(r() * 2) : m < 3 ? 1 + Math.floor(r() * 2) : 2 + Math.floor(r() * 3);
+      const losses = m < 3 ? 1 : 2 + Math.floor(r() * 3);
+      for (let j = 0; j < wins + losses; j++) {
+        const isWin = j < wins;
+        const prog = pick(d.programs);
+        const closedAt = mStart + Math.floor(r() * (mEnd - mStart));
+        const created = closedAt - Math.floor(8 + r() * 30) * DAY;
+        const lead = {
+          id: uid('L'), name: pick(first) + ' ' + pick(last), company: pick(comp), phone: '08' + String(Math.floor(1e9 + r() * 8e9)), email: '',
+          source: pick(d.config.sources), ownerId: pick(ownerPool).id, programId: prog.id, value: prog.price, stageId: isWin ? won.id : lost.id,
+          nextAction: '', nextActionDate: '', notes: '', demo: true, createdAt: new Date(created).toISOString(), updatedAt: new Date(closedAt).toISOString(),
+          history: [{ at: new Date(created).toISOString(), from: null, to: open[0].id, note: 'Lead created' }]
+        };
+        const path = isWin ? open : open.slice(0, 1 + Math.floor(r() * open.length));
+        path.slice(1).forEach((s2, k) => lead.history.push({ at: new Date(created + (k + 1) * (closedAt - created) / (path.length + 1)).toISOString(), from: lead.history[lead.history.length - 1].to, to: s2.id, note: '' }));
+        lead.history.push({ at: new Date(closedAt).toISOString(), from: lead.history[lead.history.length - 1].to, to: lead.stageId, note: isWin ? 'Deal closed' : '' });
+        if (isWin) {
+          lead.wonAt = new Date(closedAt).toISOString();
+          const coach = pick(mentorPool).id;
+          const start = localISO(new Date(closedAt));
+          d.clients.push({ id: uid('C'), leadId: lead.id, name: lead.name, company: lead.company, phone: lead.phone, email: '', programId: prog.id, coachId: coach, assistantId: asstOf(coach),
+            startDate: start, months: prog.months, totalSessions: prog.sessions, value: lead.value, status: m < 3 ? 'active' : 'completed', notes: '', demo: true, createdAt: lead.wonAt });
+          if (m < 3 && delivery) d.sessions.push(mkSession(lead, delivery.id, localISO(new Date(now + Math.floor(1 + r() * 10) * DAY)), 'scheduled', coach));
+          if (m < 3 && delivery && m > 0) d.sessions.push(mkSession(lead, delivery.id, localISO(new Date(Math.min(now - DAY, closedAt + 14 * DAY))), 'done', coach, { actionItems: [{ text: pick(tasks), done: true }] }));
+        } else { lead.lostReason = pick(d.config.lostReasons); lead.lostAt = new Date(closedAt).toISOString(); }
+        d.leads.push(lead);
+      }
     }
     const c0 = d.clients[0];
     if (c0) {
@@ -931,7 +967,7 @@
 
   function tabsFor() {
     if (R() === 'client') return [['portal', tr('My Portal', 'Portal Saya')]];
-    const t = [['dashboard', 'Dashboard'], ['pipeline', 'Pipeline'], ['leads', L('leads')], ['sessions', L('sessions')], ['clients', L('clients')]];
+    const t = [['dashboard', 'Dashboard'], ['pipeline', 'Pipeline'], ['leads', L('leads')], ['sessions', L('sessions')], ['clients', L('clients')], ['reports', tr('Reports', 'Laporan')]];
     if (can.accounts()) t.push(['team', tr('Team & Access', 'Tim & Akses')]);
     if (can.settings()) t.push(['settings', 'Settings']);
     return t;
@@ -942,7 +978,7 @@
   // =====================================================================
   const views = {
     dashboard: () => renderDashboard(), pipeline: () => renderPipeline(), leads: () => renderLeads(), sessions: () => renderSessions(),
-    clients: () => renderClients(), team: () => renderTeam(), settings: () => renderSettings(), portal: () => renderPortal()
+    clients: () => renderClients(), reports: () => renderReports(), team: () => renderTeam(), settings: () => renderSettings(), portal: () => renderPortal()
   };
   function currentView() {
     const allowed = tabsFor().map((t) => t[0]);
@@ -959,6 +995,7 @@
     showGate(`<div class="gate-card"><div class="muted small" style="text-align:center">${esc(msg || tr('Loading…', 'Memuat…'))}</div></div>`);
   }
   function rerenderAll() {
+    if (formMode) { renderPublicForm(formMode.slug, formMode.info, formMode.done); return; }
     if (pme && !me) { renderConsole(); return; }
     if (S) { render(); if (drawerState && me) reopenDrawer(); return; }
     renderNeutralLogin();
@@ -1544,6 +1581,7 @@
         <div><div class="eyebrow">Database</div><h1>${esc(L('leads'))}</h1><div class="muted small">${tr(`${list.length} of ${visibleLeads().length} records`, `${list.length} dari ${visibleLeads().length} data`)}</div></div>
         <div class="toolbar">
           <button class="btn" type="button" id="btn-csv">Export CSV</button>
+          ${isStaff() ? `<button class="btn" type="button" id="btn-import">Import CSV</button>` : ''}
           ${isStaff() ? `<button class="btn btn-primary" type="button" data-new-lead>+ ${esc(L('lead'))}</button>` : ''}
         </div>
       </div>
@@ -1573,6 +1611,7 @@
     if ($('#lead-owner-f')) $('#lead-owner-f').onchange = (e) => { ui.leadOwner = e.target.value; renderLeads(); };
     $('#lead-source-f').onchange = (e) => { ui.leadSource = e.target.value; renderLeads(); };
     $('#btn-csv').onclick = () => exportCSV(list);
+    if ($('#btn-import')) $('#btn-import').onclick = importForm;
     bindOpeners();
   }
 
@@ -1604,7 +1643,11 @@
         </div>
       </div>
       ${scopeNote()}
-      <div class="seg" id="sess-seg" style="margin-bottom:12px">${segBtn('upcoming', tr('Upcoming', 'Mendatang'))}${segBtn('today', tr('Today', 'Hari ini'))}${segBtn('missed', tr('Needs update', 'Perlu update') + (missedN ? ' (' + missedN + ')' : ''))}${segBtn('past', tr('History', 'Riwayat'))}${segBtn('all', tr('All', 'Semua'))}</div>
+      <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+        <div class="seg" id="sess-view"><button type="button" class="${ui.sessView === 'list' ? 'on' : ''}" data-sv="list">${tr('List', 'Daftar')}</button><button type="button" class="${ui.sessView === 'week' ? 'on' : ''}" data-sv="week">${tr('Week', 'Minggu')}</button></div>
+        ${ui.sessView === 'week' ? '' : `<div class="seg" id="sess-seg">${segBtn('upcoming', tr('Upcoming', 'Mendatang'))}${segBtn('today', tr('Today', 'Hari ini'))}${segBtn('missed', tr('Needs update', 'Perlu update') + (missedN ? ' (' + missedN + ')' : ''))}${segBtn('past', tr('History', 'Riwayat'))}${segBtn('all', tr('All', 'Semua'))}</div>`}
+      </div>
+      ${ui.sessView === 'week' ? weekView(base.filter((s) => (!ui.sessType || s.typeId === ui.sessType) && (!ui.sessMentor || s.mentorId === ui.sessMentor))) : `
       <div class="card table-card"><div class="table-wrap"><table>
         <thead><tr><th>${tr('Date', 'Tanggal')}</th><th>${tr('Type', 'Jenis')}</th><th>${esc(L('lead'))} / ${esc(L('client'))}</th><th>${esc(L('mentor'))}</th><th>Status</th><th class="right">${tr('Actions', 'Aksi')}</th></tr></thead>
         <tbody>${list.map((s) => { const l = lead(s.leadId); const ai = s.actionItems || []; return `<tr>
@@ -1618,8 +1661,10 @@
             ${can.editSession() && s.status === 'scheduled' ? `<button class="btn btn-sm btn-ok" type="button" data-sess-done="${esc(s.id)}">${tr('Done', 'Selesai')}</button><button class="btn btn-sm" type="button" data-sess-noshow="${esc(s.id)}">No-show</button>` : ''}
             ${can.editSession() ? `<button class="btn btn-sm" type="button" data-sess-edit="${esc(s.id)}">Edit</button>` : ''}
           </td></tr>`; }).join('') || `<tr><td colspan="6" class="empty">${esc(tr(`No ${L('sessions')} for this filter.`, `Tidak ada ${L('sessions')} di filter ini.`))}</td></tr>`}</tbody>
-      </table></div></div>`;
+      </table></div></div>`}`;
     $$('#sess-seg button').forEach((b) => b.onclick = () => { ui.sessFilter = b.dataset.sf; renderSessions(); });
+    $$('#sess-view button').forEach((b) => b.onclick = () => { ui.sessView = b.dataset.sv; renderSessions(); });
+    $$('[data-week]').forEach((b) => b.onclick = () => { const n = Number(b.dataset.week); ui.weekStart = n ? addDays(ui.weekStart || weekStartOf(todayISO()), n) : weekStartOf(todayISO()); renderSessions(); });
     $('#sess-type').onchange = (e) => { ui.sessType = e.target.value; renderSessions(); };
     if ($('#sess-mentor')) $('#sess-mentor').onchange = (e) => { ui.sessMentor = e.target.value; renderSessions(); };
     bindSessionActions(renderMain);
@@ -1909,6 +1954,22 @@
               <td><button class="btn btn-sm btn-danger" type="button" data-program-del="${i}" aria-label="Delete">✕</button></td></tr>`).join('')}
           </tbody></table></div>
         </div>
+        <div class="card" id="set-sales">
+          <div class="card-title">${tr('Sales targets & Self Compensation', 'Target sales & Self Compensation')}</div>
+          <div class="hint">${tr('Drives the Reports page: commission on revenue closed, plus a bonus when the monthly target is reached.', 'Dipakai di halaman Laporan: komisi dari revenue closed, plus bonus saat target bulanan tercapai.')}</div>
+          <div class="grid-2 mt">
+            <label class="field"><span>${tr('Monthly target per BD (Rp)', 'Target bulanan per BD (Rp)')}</span><input id="set-target" type="number" min="0" step="1000000" data-comm="target" value="${esc(c.commission.target)}"></label>
+            <label class="field"><span>${tr('Commission % of revenue', 'Komisi % dari revenue')}</span><input id="set-rate" type="number" min="0" max="100" step="0.5" data-comm="rate" value="${esc(c.commission.rate)}"></label>
+            <label class="field"><span>${tr('Bonus % when target hit', 'Bonus % saat target tercapai')}</span><input id="set-bonus" type="number" min="0" max="100" step="0.5" data-comm="bonus" value="${esc(c.commission.bonus)}"></label>
+          </div>
+        </div>
+        <div class="card" id="set-capture">
+          <div class="card-title">${tr('Lead capture form', 'Form lead capture')}</div>
+          <div class="hint">${tr('A public form for your website, Instagram bio or ads. Every submission lands in the pipeline and is assigned to the BD with the fewest open leads.', 'Form publik untuk website, bio Instagram atau iklan. Setiap kiriman masuk pipeline dan otomatis dibagi ke BD dengan lead aktif paling sedikit.')}</div>
+          <label class="check mt"><input type="checkbox" id="set-publicform" ${c.publicForm ? 'checked' : ''}> ${tr('Form is live', 'Form aktif')}</label>
+          ${c.publicForm ? `<div class="copy-row mt"><input id="form-link" readonly value="${esc(location.href.split('#')[0].split('?')[0] + '?form=' + S.slug)}"><button class="btn btn-sm" type="button" id="copy-form">${tr('Copy', 'Salin')}</button><a class="btn btn-sm" target="_blank" rel="noopener" href="${esc('?form=' + S.slug)}">${tr('Open', 'Buka')}</a></div>
+          <div class="hint">${tr('Track campaigns by adding &src=Instagram (must match a lead source).', 'Lacak kampanye dengan menambah &src=Instagram (harus sama dengan sumber lead).')}</div>` : ''}
+        </div>
         <div class="card">
           <div class="card-title">${esc(tr(`${L('lead')} sources`, `Sumber ${L('lead')}`))}</div><div class="hint">${tr('One per line', 'Satu per baris')}</div>
           <textarea class="mt" id="set-sources" data-list="sources" rows="6">${esc(c.sources.join('\n'))}</textarea>
@@ -1935,6 +1996,9 @@
       </div>`;
     const reBrand = () => { save(); applyBrand(); };
     $$('[data-cfg]').forEach((el) => el.onchange = () => { c[el.dataset.cfg] = el.value; reBrand(); toast(tr('Saved', 'Tersimpan')); });
+    $$('[data-comm]').forEach((el) => el.onchange = () => { c.commission[el.dataset.comm] = Math.max(0, Number(el.value) || 0); save(); toast(tr('Saved', 'Tersimpan')); });
+    $('#set-publicform').onchange = (e) => { c.publicForm = e.target.checked; save(); renderSettings(); toast(c.publicForm ? tr('Lead form is live', 'Form lead aktif') : tr('Lead form switched off', 'Form lead dimatikan')); };
+    if ($('#copy-form')) $('#copy-form').onclick = async () => { const v = $('#form-link').value; try { await navigator.clipboard.writeText(v); toast(tr('Link copied', 'Link disalin')); } catch (e) { $('#form-link').select(); toast(tr('Select and copy the link', 'Pilih & salin link-nya')); } };
     $('#set-demologin').onchange = (e) => { c.demoLogin = e.target.checked; save(); toast(c.demoLogin ? tr('Demo sign-in on', 'Login demo aktif') : tr('Demo sign-in off', 'Login demo dimatikan')); };
     $$('[data-label-key]').forEach((el) => el.onchange = () => { c.labels[el.dataset.labelKey] = el.value || el.dataset.labelKey; reBrand(); renderMain(); toast(tr('Terminology updated', 'Istilah diperbarui')); });
     const num = (k, v) => (['prob', 'sla', 'duration', 'price', 'sessions', 'months'].includes(k) ? Number(v) || 0 : v);
@@ -2177,7 +2241,7 @@
   // =====================================================================
   function leadForm(l, after) {
     const isNew = !l;
-    const d = l || { stageId: openStages()[0] && openStages()[0].id, source: S.config.sources[0], ownerId: R() === 'bd' ? me.id : (S.accounts.find((m) => m.role === 'bd') || S.accounts.find((m) => m.role === 'superadmin') || {}).id };
+    const d = l || { stageId: openStages()[0] && openStages()[0].id, source: S.config.sources[0], ownerId: R() === 'bd' ? me.id : pickOwner() };
     openModal(isNew ? tr(`New ${L('lead')}`, `${L('lead')} baru`) : `Edit ${L('lead')}`, `
       <div class="grid-2">
         <label class="field"><span>${tr('Name *', 'Nama *')}</span><input name="name" id="f-lead-name" required value="${esc(d.name || '')}" placeholder="${esc(tr('Full name', 'Nama lengkap'))}"></label>
@@ -2325,6 +2389,308 @@
   }
 
   // =====================================================================
+  // Reports: revenue trend, forecast, cohorts, Self Compensation, coach utilisation
+  // =====================================================================
+  const monthKey = (iso) => String(iso || '').slice(0, 7);
+  const lastMonths = (n) => { const out = [], d = new Date(); d.setDate(1); for (let i = n - 1; i >= 0; i--) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(localISO(x).slice(0, 7)); } return out; };
+  const monthLabel = (k, long) => new Date(k + '-01T00:00:00').toLocaleDateString(locale(), long ? { month: 'long', year: 'numeric' } : { month: 'short' });
+  const comm = () => Object.assign({ rate: 10, target: 0, bonus: 0 }, S.config.commission || {});
+  // Self Compensation: pay follows closed revenue, the same formula for everyone, visible to the person it pays.
+  function compensationRows(month) {
+    const c = comm();
+    const rows = {};
+    S.accounts.filter((a) => a.role === 'bd' && a.active !== false).forEach((a) => { rows[a.id] = { id: a.id, deals: 0, rev: 0 }; });
+    S.leads.forEach((l) => {
+      if (!isWon(l) || monthKey(l.wonAt) !== month) return;
+      const k = l.ownerId || '';
+      rows[k] = rows[k] || { id: k, deals: 0, rev: 0 };
+      rows[k].deals++; rows[k].rev += Number(l.value) || 0;
+    });
+    return Object.values(rows).map((r) => {
+      const att = c.target ? pct(r.rev, c.target) : null;
+      const base = r.rev * (Number(c.rate) || 0) / 100;
+      const bonus = c.target && r.rev >= c.target ? r.rev * (Number(c.bonus) || 0) / 100 : 0;
+      return Object.assign(r, { att, base, bonus, total: base + bonus });
+    }).sort((a, b) => b.rev - a.rev);
+  }
+  function barChart(points, opts) {
+    const W = 1100, H = 240, pad = { l: 8, r: 8, t: 20, b: 26 };
+    const max = Math.max(1, opts.target || 0, ...points.map((p) => p.v));
+    const bw = (W - pad.l - pad.r) / points.length;
+    const y = (v) => pad.t + (H - pad.t - pad.b) * (1 - v / max);
+    const bars = points.map((p, i) => {
+      const x = pad.l + i * bw + bw * 0.18, w = bw * 0.64, top = y(p.v);
+      return `<g><title>${esc(p.title)}</title><rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(0, H - pad.b - top).toFixed(1)}" rx="4" class="${p.cur ? 'bar bar-cur' : 'bar'}"></rect>
+        ${p.v ? `<text x="${(x + w / 2).toFixed(1)}" y="${(top - 5).toFixed(1)}" text-anchor="middle" class="bar-val">${esc(p.short)}</text>` : ''}
+        <text x="${(x + w / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="bar-lab">${esc(p.label)}</text></g>`;
+    }).join('');
+    const tline = opts.target ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(opts.target).toFixed(1)}" y2="${y(opts.target).toFixed(1)}" class="target-line"></line><text x="${W - pad.r}" y="${(y(opts.target) - 4).toFixed(1)}" text-anchor="end" class="bar-lab">${esc(opts.targetLabel)}</text>` : '';
+    return `<div class="chart-wrap"><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.aria)}">${bars}${tline}</svg></div>`;
+  }
+  function renderReports() {
+    const leads = seesAll() ? S.leads : visibleLeads();
+    const months = lastMonths(12);
+    const cur = months[months.length - 1];
+    if (!ui.repMonth || !months.includes(ui.repMonth)) ui.repMonth = cur;
+    const c = comm();
+    const teamTarget = c.target ? c.target * Math.max(1, ownersList().filter((a) => a.role === 'bd').length || 1) : 0;
+    const byMonth = {};
+    months.forEach((k) => { byMonth[k] = { k, created: 0, cohortWon: 0, won: 0, rev: 0, cycle: 0 }; });
+    leads.forEach((l) => {
+      const ck = monthKey(l.createdAt);
+      if (byMonth[ck]) { byMonth[ck].created++; if (isWon(l)) byMonth[ck].cohortWon++; }
+      if (isWon(l) && byMonth[monthKey(l.wonAt)]) { const m = byMonth[monthKey(l.wonAt)]; m.won++; m.rev += Number(l.value) || 0; m.cycle += Math.max(0, daysBetween(l.createdAt, l.wonAt)); }
+    });
+    const ytd = months.filter((k) => k.slice(0, 4) === cur.slice(0, 4)).reduce((a, k) => a + byMonth[k].rev, 0);
+    const wonAll = leads.filter(isWon);
+    const avgDeal = wonAll.length ? wonAll.reduce((a, l) => a + (Number(l.value) || 0), 0) / wonAll.length : 0;
+    const open = leads.filter(isOpen);
+    const fc = openStages().map((s) => {
+      const ls = open.filter((l) => l.stageId === s.id);
+      const val = ls.reduce((a, l) => a + (Number(l.value) || 0), 0);
+      return { s, n: ls.length, val, w: val * (s.prob || 0) / 100 };
+    });
+    const weighted = fc.reduce((a, x) => a + x.w, 0);
+    const projected = byMonth[cur].rev + weighted;
+    const comp = compensationRows(ui.repMonth).filter((r) => seesAll() || r.id === me.id);
+    const sources = {};
+    leads.filter((l) => inPeriod(l.createdAt)).forEach((l) => {
+      const k = l.source || '—';
+      sources[k] = sources[k] || { n: 0, won: 0, rev: 0 };
+      sources[k].n++; if (isWon(l)) { sources[k].won++; sources[k].rev += Number(l.value) || 0; }
+    });
+    const today = todayISO();
+    const coaches = seesAll() ? mentorsList().map((m) => {
+      const ss = S.sessions.filter((s) => s.mentorId === m.id);
+      const done30 = ss.filter((s) => s.status === 'done' && daysBetween(s.date, today) <= 30 && s.date <= today);
+      const next14 = ss.filter((s) => s.status === 'scheduled' && s.date >= today && daysBetween(today, s.date) <= 14);
+      const past90 = ss.filter((s) => s.date <= today && daysBetween(s.date, today) <= 90 && ['done', 'noshow'].includes(s.status));
+      const hours = done30.reduce((a, s) => a + (stype(s.typeId).duration || 60), 0) / 60;
+      const acts = []; ss.forEach((s) => (s.actionItems || []).forEach((a) => acts.push(a)));
+      return { m, clients: S.clients.filter((x) => x.coachId === m.id && x.status === 'active').length, done: done30.length, hours, next: next14.length,
+        noshow: pct(past90.filter((s) => s.status === 'noshow').length, past90.length), actions: acts.length ? pct(acts.filter((a) => a.done).length, acts.length) : null };
+    }) : [];
+    const periodBtn = (v, t) => `<button type="button" class="${ui.period === v ? 'on' : ''}" data-period="${v}">${t}</button>`;
+    $('#view').innerHTML = `
+      <div class="page-head">
+        <div><div class="eyebrow">${esc(S.config.brandName)}</div><h1>${tr('Reports', 'Laporan')}</h1><div class="muted small">${tr('Revenue, forecast, conversion, compensation and delivery capacity in one place.', 'Revenue, forecast, konversi, kompensasi & kapasitas delivery dalam satu layar.')}</div></div>
+        <div class="toolbar"><button class="btn" type="button" id="rep-csv">Export CSV</button><button class="btn" type="button" id="rep-print">${tr('Print / PDF', 'Cetak / PDF')}</button></div>
+      </div>
+      ${scopeNote()}
+      <div class="kpis">
+        ${kpi(tr('Revenue this year', 'Revenue tahun ini'), fmtMoneyShort(ytd), tr(`${wonAll.length} deals all time`, `${wonAll.length} deal sepanjang waktu`), true)}
+        ${kpi(tr('Revenue this month', 'Revenue bulan ini'), fmtMoneyShort(byMonth[cur].rev), teamTarget ? tr(`${pct(byMonth[cur].rev, teamTarget)}% of team target`, `${pct(byMonth[cur].rev, teamTarget)}% dari target tim`) : tr(`${byMonth[cur].won} deals`, `${byMonth[cur].won} deal`))}
+        ${kpi(tr('Weighted pipeline', 'Pipeline tertimbang'), fmtMoneyShort(weighted), tr(`${open.length} open · stage probability`, `${open.length} aktif · probabilitas stage`))}
+        ${kpi(tr('Projected this month', 'Proyeksi bulan ini'), fmtMoneyShort(projected), tr('Closed + weighted pipeline', 'Closed + pipeline tertimbang'))}
+        ${kpi(tr('Average deal', 'Rata-rata deal'), fmtMoneyShort(avgDeal), tr('All won deals', 'Semua deal won'))}
+      </div>
+      <div class="card mt">
+        <div class="card-head"><div><div class="card-title">${tr('Revenue closed per month', 'Revenue closed per bulan')}</div><div class="muted small">${tr('Last 12 months', '12 bulan terakhir')}${teamTarget ? ' · ' + tr('dashed line = team target', 'garis putus = target tim') : ''}</div></div></div>
+        ${barChart(months.map((k) => ({ v: byMonth[k].rev, label: monthLabel(k), short: fmtMoneyShort(byMonth[k].rev).replace('Rp ', ''), title: `${monthLabel(k, true)}: ${fmtMoney(byMonth[k].rev)} · ${byMonth[k].won} deal`, cur: k === cur })), { target: teamTarget, targetLabel: tr('Target', 'Target'), aria: tr('Revenue per month', 'Revenue per bulan') })}
+      </div>
+      <div class="dash-grid">
+        <div class="card">
+          <div class="card-head"><div><div class="card-title">${tr('Forecast by stage', 'Forecast per stage')}</div><div class="muted small">${tr('Open value × stage probability (set in Settings)', 'Nilai aktif × probabilitas stage (atur di Settings)')}</div></div></div>
+          <div class="table-wrap"><table id="rep-forecast"><thead><tr><th>Stage</th><th class="right">${esc(L('leads'))}</th><th class="right">${tr('Value', 'Nilai')}</th><th class="right">Prob</th><th class="right">${tr('Weighted', 'Tertimbang')}</th></tr></thead>
+          <tbody>${fc.map((x) => `<tr><td>${pillStage(x.s.id)}</td><td class="right">${x.n}</td><td class="right nowrap">${fmtMoneyShort(x.val)}</td><td class="right">${x.s.prob || 0}%</td><td class="right nowrap"><b>${fmtMoneyShort(x.w)}</b></td></tr>`).join('')}
+          <tr class="total-row"><td><b>Total</b></td><td class="right"><b>${open.length}</b></td><td class="right nowrap"><b>${fmtMoneyShort(fc.reduce((a, x) => a + x.val, 0))}</b></td><td></td><td class="right nowrap"><b>${fmtMoneyShort(weighted)}</b></td></tr></tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div><div class="card-title">${tr('Monthly cohorts', 'Kohort bulanan')}</div><div class="muted small">${esc(tr(`${L('leads')} created each month and how many became deals`, `${L('leads')} masuk tiap bulan & berapa yang jadi deal`))}</div></div></div>
+          <div class="table-wrap"><table><thead><tr><th>${tr('Month', 'Bulan')}</th><th class="right">${tr('New', 'Masuk')}</th><th class="right">Won</th><th class="right">Lead→Deal</th><th class="right">${tr('Cycle', 'Siklus')}</th></tr></thead>
+          <tbody>${months.slice(-6).reverse().map((k) => { const m = byMonth[k]; return `<tr><td>${esc(monthLabel(k, true))}</td><td class="right">${m.created}</td><td class="right">${m.cohortWon}</td><td class="right"><b>${pct(m.cohortWon, m.created)}%</b></td><td class="right">${m.won ? Math.round(m.cycle / m.won) + tr(' d', ' hr') : '—'}</td></tr>`; }).join('')}</tbody></table></div>
+        </div>
+      </div>
+      <div class="card mt" id="rep-comp">
+        <div class="card-head"><div><div class="card-title">Self Compensation · ${tr('commission', 'komisi')}</div><div class="muted small">${esc(tr(`Commission ${c.rate}% of revenue closed${c.target ? `, +${c.bonus}% bonus when ${fmtMoneyShort(c.target)} target is reached` : ''}. Same formula for everyone.`, `Komisi ${c.rate}% dari revenue closed${c.target ? `, bonus +${c.bonus}% saat target ${fmtMoneyShort(c.target)} tercapai` : ''}. Rumus sama untuk semua.`))}</div></div>
+          <select id="rep-month" style="width:auto">${months.slice().reverse().map((k) => `<option value="${k}" ${k === ui.repMonth ? 'selected' : ''}>${esc(monthLabel(k, true))}</option>`).join('')}</select></div>
+        <div class="table-wrap"><table><thead><tr><th>${esc(L('owner'))}</th><th class="right">Deals</th><th class="right">Revenue</th>${c.target ? `<th class="right">${tr('Target', 'Target')}</th>` : ''}<th class="right">${tr('Commission', 'Komisi')}</th>${c.target ? '<th class="right">Bonus</th>' : ''}<th class="right">Total</th></tr></thead>
+        <tbody>${comp.map((r) => `<tr><td><b>${esc(accName(r.id))}</b>${r.id === me.id ? ` <span class="badge badge-blue">${tr('You', 'Anda')}</span>` : ''}</td><td class="right">${r.deals}</td><td class="right nowrap">${fmtMoney(r.rev)}</td>
+          ${c.target ? `<td class="right"><div class="meter" title="${r.att}%"><span style="width:${Math.min(100, r.att)}%"></span></div><span class="small ${r.att >= 100 ? 'ok-text' : 'muted'}">${r.att}%</span></td>` : ''}
+          <td class="right nowrap">${fmtMoney(r.base)}</td>${c.target ? `<td class="right nowrap">${r.bonus ? fmtMoney(r.bonus) : '—'}</td>` : ''}<td class="right nowrap"><b>${fmtMoney(r.total)}</b></td></tr>`).join('') || `<tr><td colspan="7" class="empty">${tr('No deals closed this month.', 'Belum ada deal di bulan ini.')}</td></tr>`}</tbody></table></div>
+        ${isAdmin() ? `<div class="hint mt">${tr('Change the rate, target and bonus in Settings → Sales targets.', 'Ubah komisi, target & bonus di Settings → Target sales.')}</div>` : ''}
+      </div>
+      <div class="dash-grid">
+        <div class="card">
+          <div class="card-head"><div><div class="card-title">${tr('Lead sources', 'Sumber lead')}</div><div class="muted small">${tr('Which channel brings revenue', 'Channel mana yang menghasilkan revenue')}</div></div><div class="seg" id="period">${periodBtn('30', '30d')}${periodBtn('90', '90d')}${periodBtn('all', tr('All', 'Semua'))}</div></div>
+          <div class="table-wrap"><table><thead><tr><th>${tr('Source', 'Sumber')}</th><th class="right">${esc(L('leads'))}</th><th class="right">Won</th><th class="right">Conv.</th><th class="right">Revenue</th></tr></thead>
+          <tbody>${Object.entries(sources).sort((a, b) => b[1].rev - a[1].rev || b[1].n - a[1].n).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="right">${v.n}</td><td class="right">${v.won}</td><td class="right">${pct(v.won, v.n)}%</td><td class="right nowrap"><b>${fmtMoneyShort(v.rev)}</b></td></tr>`).join('') || `<tr><td colspan="5" class="empty">${tr('No data in this period', 'Belum ada data di periode ini')}</td></tr>`}</tbody></table></div>
+        </div>
+        ${seesAll() ? `<div class="card">
+          <div class="card-head"><div><div class="card-title">${esc(tr(`${L('mentor')} utilisation`, `Utilisasi ${L('mentor')}`))}</div><div class="muted small">${tr('Delivery capacity and quality', 'Kapasitas & kualitas delivery')}</div></div></div>
+          <div class="table-wrap"><table id="rep-coaches"><thead><tr><th>${esc(L('mentor'))}</th><th class="right">${esc(L('clients'))}</th><th class="right">${tr('Done 30d', 'Selesai 30h')}</th><th class="right">${tr('Hours', 'Jam')}</th><th class="right">${tr('Next 14d', '14h ke depan')}</th><th class="right">No-show</th><th class="right">Action ✓</th></tr></thead>
+          <tbody>${coaches.map((x) => `<tr><td><b>${esc(x.m.name)}</b></td><td class="right">${x.clients}</td><td class="right">${x.done}</td><td class="right">${x.hours.toLocaleString(locale(), { maximumFractionDigits: 1 })}</td><td class="right">${x.next}</td><td class="right ${x.noshow > 20 ? 'warn-text' : ''}">${x.noshow}%</td><td class="right">${x.actions == null ? '—' : x.actions + '%'}</td></tr>`).join('') || `<tr><td colspan="7" class="empty">${tr('No coaches yet', 'Belum ada coach')}</td></tr>`}</tbody></table></div>
+        </div>` : ''}
+      </div>`;
+    $('#rep-month').onchange = (e) => { ui.repMonth = e.target.value; renderReports(); };
+    $$('#period button').forEach((b) => b.onclick = () => { ui.period = b.dataset.period; renderReports(); });
+    $('#rep-print').onclick = () => window.print();
+    $('#rep-csv').onclick = () => {
+      const q = (v) => { const s = String(v ?? ''); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      const lines = [['Month', 'New leads', 'Won (cohort)', 'Lead to deal %', 'Deals closed', 'Revenue closed'].join(',')];
+      months.forEach((k) => { const m = byMonth[k]; lines.push([k, m.created, m.cohortWon, pct(m.cohortWon, m.created), m.won, m.rev].join(',')); });
+      lines.push('', [q(L('owner')), 'Month', 'Deals', 'Revenue', 'Commission', 'Bonus', 'Total'].join(','));
+      comp.forEach((r) => lines.push([q(accName(r.id)), ui.repMonth, r.deals, r.rev, Math.round(r.base), Math.round(r.bonus), Math.round(r.total)].join(',')));
+      download(`${slugify(S.config.brandName)}-report-${todayISO()}.csv`, '﻿' + lines.join('\n'), 'text/csv;charset=utf-8');
+    };
+  }
+
+  // Round-robin by workload: the active BD with the fewest open leads (mirrors pickOwner_ on the server).
+  function pickOwner() {
+    const bds = S.accounts.filter((a) => a.role === 'bd' && a.active !== false);
+    const pool = bds.length ? bds : S.accounts.filter((a) => a.role === 'superadmin' && a.active !== false);
+    if (!pool.length) return '';
+    const load = {}; pool.forEach((a) => { load[a.id] = 0; });
+    S.leads.forEach((l) => { if (isOpen(l) && load[l.ownerId] != null) load[l.ownerId]++; });
+    return pool.slice().sort((a, b) => load[a.id] - load[b.id])[0].id;
+  }
+
+  // CSV import: paste from Excel / Google Sheets or upload a .csv; columns are matched by name.
+  function parseCSV(text) {
+    text = String(text || '').replace(/^﻿/, '');
+    const first = text.split('\n')[0] || '';
+    const sep = (first.match(/\t/g) || []).length > (first.match(/,/g) || []).length ? '\t' : (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ';' : ',';
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; continue; }
+      if (ch === '"') q = true;
+      else if (ch === sep) { row.push(cell); cell = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter((r) => r.some((x) => String(x).trim()));
+  }
+  const IMPORT_FIELDS = { name: ['name', 'nama', 'full name', 'nama lengkap'], phone: ['phone', 'whatsapp', 'wa', 'hp', 'no hp', 'no. hp', 'nomor', 'telepon', 'mobile', 'no wa'], email: ['email', 'e-mail'], company: ['company', 'perusahaan', 'bisnis', 'business'], source: ['source', 'sumber'], value: ['value', 'nilai', 'deal value', 'budget'], notes: ['notes', 'catatan', 'note', 'keterangan', 'message', 'pesan'] };
+  function mapImport(rows) {
+    const head = rows[0].map((h) => String(h).trim().toLowerCase());
+    const col = {};
+    Object.entries(IMPORT_FIELDS).forEach(([k, names]) => { const i = head.findIndex((h) => names.includes(h)); if (i >= 0) col[k] = i; });
+    const hasHead = col.name != null || col.phone != null;
+    if (!hasHead) { col.name = 0; col.phone = 1; col.email = 2; col.company = 3; }
+    const known = new Set(S.leads.map((l) => waNumber(l.phone)).filter((x) => x.length > 6));
+    const out = { ok: [], dup: 0, bad: 0, mapped: Object.keys(col) };
+    (hasHead ? rows.slice(1) : rows).forEach((r) => {
+      const g = (k) => (col[k] != null ? String(r[col[k]] || '').trim() : '');
+      const rec = { name: g('name'), phone: g('phone'), email: g('email'), company: g('company'), source: g('source'), value: Number(g('value').replace(/[^\d]/g, '')) || 0, notes: g('notes') };
+      if (!rec.name || waNumber(rec.phone).length < 8) { out.bad++; return; }
+      const n = waNumber(rec.phone);
+      if (known.has(n)) { out.dup++; return; }
+      known.add(n); out.ok.push(rec);
+    });
+    return out;
+  }
+  function importForm() {
+    let parsed = null;
+    openModal(tr(`Import ${L('leads')}`, `Import ${L('leads')}`), `
+      <div class="hint">${tr('Paste rows from Excel / Google Sheets or upload a CSV. Columns are recognised by name: Name, Phone/WhatsApp, Email, Company, Source, Value, Notes. Duplicates (same WhatsApp number) are skipped.', 'Tempel baris dari Excel / Google Sheets atau upload CSV. Kolom dikenali dari nama: Nama, HP/WhatsApp, Email, Perusahaan, Sumber, Nilai, Catatan. Duplikat (nomor WA sama) dilewati.')}</div>
+      <label class="field mt"><span>CSV</span><textarea id="f-imp-text" rows="7" placeholder="Name,Phone,Email,Company&#10;Budi Santoso,0812xxxx,budi@mail.com,PT Maju"></textarea></label>
+      <div class="row mt"><label class="btn btn-sm">${tr('Upload .csv', 'Upload .csv')}<input type="file" id="f-imp-file" accept=".csv,text/csv,text/plain" hidden></label><span class="small" id="imp-preview"></span></div>
+      ${R() === 'bd' ? '' : `<label class="field mt"><span>${esc(L('owner'))} (PIC)</span><select name="owner" id="f-imp-owner"><option value="__auto">${tr('Auto-assign (round-robin by workload)', 'Otomatis (round-robin sesuai beban)')}</option>${options(ownersList(), '', (m) => m.id, (m) => m.name + ' · ' + roleName(m.role))}</select></label>`}
+      ${modalFoot(tr('Import', 'Import'))}`,
+    () => {
+      if (!parsed || !parsed.ok.length) { toast(tr('Nothing to import yet', 'Belum ada data untuk diimport')); return false; }
+      const sel = R() === 'bd' ? me.id : ($('#f-imp-owner') || {}).value || '__auto';
+      const st = openStages()[0];
+      const nowIso = new Date().toISOString();
+      parsed.ok.forEach((r, i) => {
+        const at = new Date(Date.now() + i).toISOString();
+        S.leads.unshift({ id: uid('L'), name: r.name, phone: r.phone, email: r.email, company: r.company, source: r.source || 'Import', ownerId: sel === '__auto' ? pickOwner() : sel, programId: '', value: r.value, stageId: st.id,
+          nextAction: tr('WhatsApp follow-up', 'Follow up WA'), nextActionDate: todayISO(), notes: r.notes, createdAt: at, updatedAt: nowIso, createdBy: me.id, history: [{ at, from: null, to: st.id, note: 'Imported', by: me.id }] });
+      });
+      if (parsed.ok.some((r) => r.source && !S.config.sources.includes(r.source)) && isAdmin()) parsed.ok.forEach((r) => { if (r.source && !S.config.sources.includes(r.source)) S.config.sources.push(r.source); });
+      save(); renderMain();
+      toast(tr(`${parsed.ok.length} ${L('leads')} imported${parsed.dup ? `, ${parsed.dup} duplicates skipped` : ''}`, `${parsed.ok.length} ${L('leads')} diimport${parsed.dup ? `, ${parsed.dup} duplikat dilewati` : ''}`));
+    });
+    const preview = () => {
+      const rows = parseCSV($('#f-imp-text').value);
+      parsed = rows.length ? mapImport(rows) : null;
+      $('#imp-preview').innerHTML = parsed ? `<b>${parsed.ok.length}</b> ${esc(tr('ready', 'siap'))} · ${parsed.dup} ${esc(tr('duplicates', 'duplikat'))} · ${parsed.bad} ${esc(tr('missing name/phone', 'tanpa nama/HP'))}` : '';
+    };
+    $('#f-imp-text').oninput = preview;
+    $('#f-imp-file').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { $('#f-imp-text').value = rd.result; preview(); }; rd.readAsText(f); };
+  }
+
+  // Week calendar for sessions
+  const weekStartOf = (iso) => { const d = new Date(iso + 'T00:00:00'); const wd = (d.getDay() + 6) % 7; d.setDate(d.getDate() - wd); return localISO(d); };
+  const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return localISO(d); };
+  function weekView(list) {
+    const start = ui.weekStart || weekStartOf(todayISO());
+    const today = todayISO();
+    const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+    const label = `${fmtShortDate(days[0])} – ${fmtDate(days[6])}`;
+    return `<div class="week-nav"><button class="btn btn-sm" type="button" data-week="-7" aria-label="${esc(tr('Previous week', 'Minggu sebelumnya'))}">←</button><button class="btn btn-sm" type="button" data-week="0">${tr('This week', 'Minggu ini')}</button><button class="btn btn-sm" type="button" data-week="7" aria-label="${esc(tr('Next week', 'Minggu depan'))}">→</button><b id="week-label">${esc(label)}</b></div>
+      <div class="week-grid">${days.map((d) => {
+        const items = list.filter((s) => s.date === d).sort((a, b) => a.time.localeCompare(b.time));
+        const dt = new Date(d + 'T00:00:00');
+        return `<div class="week-day ${d === today ? 'is-today' : ''}"><div class="week-head"><span>${esc(dt.toLocaleDateString(locale(), { weekday: 'short' }))}</span><b>${dt.getDate()}</b></div>
+          ${items.map((s) => { const l = lead(s.leadId); const t = stype(s.typeId); return `<button type="button" class="week-item st-${esc(s.status)}" style="--c:${esc(t.color)}" ${can.editSession() ? `data-sess-edit="${esc(s.id)}"` : l ? `data-open-lead="${esc(l.id)}"` : ''}>
+            <span class="wi-time">${esc(s.time)}</span><span class="wi-name">${esc(l ? l.name : '—')}</span><span class="wi-meta">${esc(t.name)} · ${esc(initials(accName(s.mentorId)))}</span></button>`; }).join('') || '<div class="week-empty">—</div>'}
+        </div>`;
+      }).join('')}</div>`;
+  }
+
+  // Public lead form: <app link>?form=<company-code>. Lands in the pipeline, auto-assigned.
+  function renderPublicForm(slug, info, done) {
+    const c = info.config || {};
+    document.title = (c.brandName || 'Contact') + ' · ' + tr('Get in touch', 'Hubungi kami');
+    document.documentElement.style.setProperty('--accent', c.accent || '#1a4fa0');
+    if (!c.publicForm) { showGate(`<div class="gate-card"><div class="gate-title">${tr('This form is not available', 'Form ini tidak tersedia')}</div></div>`); return; }
+    if (done) {
+      showGate(`<div class="gate-card form-card"><div class="gate-brand"><div class="brand-logo">${esc(initials(c.brandName))}</div><div class="gate-title">${esc(c.brandName)}</div></div>
+        <div class="success-mark" aria-hidden="true">✓</div><div class="gate-title" id="form-done">${tr('Thank you!', 'Terima kasih!')}</div><p class="muted">${tr('Our team will contact you on WhatsApp shortly.', 'Tim kami akan menghubungi Anda via WhatsApp segera.')}</p></div>`);
+      return;
+    }
+    showGate(`<div class="gate-card form-card">
+      <div class="gate-brand"><div class="brand-logo">${esc(initials(c.brandName))}</div><div><div class="gate-title">${esc(c.brandName)}</div><div class="muted small">${esc(c.tagline || '')}</div></div></div>
+      <div><div class="gate-title">${tr('Book a free consultation', 'Booking konsultasi gratis')}</div><div class="muted small">${tr('Leave your details and we will reach out on WhatsApp.', 'Isi data Anda, kami akan menghubungi via WhatsApp.')}</div></div>
+      <form id="pub-form" class="form-stack" autocomplete="on">
+        <label class="field"><span>${tr('Full name *', 'Nama lengkap *')}</span><input id="pf-name" name="name" required maxlength="80" autocomplete="name"></label>
+        <label class="field"><span>${tr('WhatsApp number *', 'No. WhatsApp *')}</span><input id="pf-phone" name="phone" type="tel" required maxlength="20" placeholder="0812xxxxxxx" autocomplete="tel"></label>
+        <label class="field"><span>Email</span><input id="pf-email" name="email" type="email" maxlength="120" autocomplete="email"></label>
+        <label class="field"><span>${tr('Company / business', 'Perusahaan / bisnis')}</span><input id="pf-company" name="company" maxlength="120" autocomplete="organization"></label>
+        ${(info.programs || []).length ? `<label class="field"><span>${tr('Interested in', 'Tertarik dengan')}</span><select id="pf-program" name="programId"><option value="">${tr('— not sure yet —', '— belum tahu —')}</option>${info.programs.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label>` : ''}
+        <label class="field"><span>${tr('What would you like to achieve?', 'Apa yang ingin Anda capai?')}</span><textarea id="pf-msg" name="message" maxlength="1000" rows="3"></textarea></label>
+        <label class="hp-field" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+        <div class="gate-err" id="pf-err" hidden></div>
+        <button class="btn btn-primary" type="submit" style="justify-content:center;padding:10px">${tr('Send', 'Kirim')}</button>
+        <div class="tiny muted">${tr('We only use your details to contact you about our programs.', 'Data Anda hanya dipakai untuk menghubungi Anda terkait program kami.')}</div>
+      </form></div>`);
+    $('#pub-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const v = Object.fromEntries(new FormData(e.target).entries());
+      const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
+      const err = (m) => { const el = $('#pf-err'); el.hidden = false; el.textContent = m; btn.disabled = false; };
+      if (waNumber(v.phone).length < 9) { err(tr('Please enter a valid WhatsApp number.', 'Masukkan nomor WhatsApp yang valid.')); return; }
+      let r;
+      try { r = await submitPublicLead(slug, info, Object.assign({ source: new URLSearchParams(location.search).get('src') || '' }, v)); } catch (x) { r = { ok: false, error: 'network' }; }
+      if (r.ok) { if (formMode) formMode.done = true; renderPublicForm(slug, info, true); return; }
+      err(r.error === 'busy' ? tr('Too many submissions right now. Please try again in a few minutes.', 'Terlalu banyak kiriman. Coba lagi beberapa menit lagi.') : r.error === 'network' ? tr('Cannot reach the server. Check your connection.', 'Server tidak bisa dihubungi. Cek koneksi Anda.') : tr('Could not send. Please check your details.', 'Gagal mengirim. Cek kembali data Anda.'));
+    };
+  }
+  async function submitPublicLead(slug, info, v) {
+    if (Backend.serverAuth) return Backend.call('capture', Object.assign({ slug }, v));
+    if (v.website) return { ok: true };
+    // Demo / local modes: same rules as the server, written straight into the company.
+    const data = await Backend.open(info.id);
+    if (!data) return { ok: false, error: 'closed' };
+    S = migrate(data);
+    const n = waNumber(v.phone);
+    if (S.status === 'suspended' || !S.config.publicForm) { S = null; return { ok: false, error: 'closed' }; }
+    if (S.leads.some((l) => waNumber(l.phone) === n)) { S = null; return { ok: true, duplicate: true }; }
+    const st = openStages()[0];
+    const prog = program(v.programId);
+    const nowIso = new Date().toISOString();
+    S.leads.unshift({ id: uid('L'), name: v.name.trim().slice(0, 80), phone: v.phone.trim(), email: v.email || '', company: v.company || '', source: S.config.sources.includes(v.source) ? v.source : 'Website form', ownerId: pickOwner(), programId: prog ? prog.id : '', value: prog ? Number(prog.price) || 0 : 0,
+      stageId: st.id, nextAction: 'WhatsApp follow-up (web form)', nextActionDate: todayISO(), notes: v.message || '', createdAt: nowIso, updatedAt: nowIso, createdBy: 'web-form', history: [{ at: nowIso, from: null, to: st.id, note: 'Web form', by: 'web-form' }] });
+    if (Backend.flush) { await Backend.flush(S); if (Backend.idle) await Backend.idle(); } else Backend.save();
+    if (Backend.close) Backend.close();
+    S = null;
+    return { ok: true };
+  }
+
+  // =====================================================================
   // Modal, confirm, toast
   // =====================================================================
   let modalSubmit = null;
@@ -2437,7 +2803,7 @@
       <p class="muted small" style="margin:0">${tr('Check your internet connection. You stay signed in; nothing was lost.', 'Cek koneksi internet Anda. Anda tetap masuk; tidak ada data yang hilang.')}</p>
       <button class="btn btn-primary" id="retry-boot" type="button" style="justify-content:center;padding:10px">${tr('Try again', 'Coba lagi')}</button>
     </div>`);
-    $('#retry-boot').onclick = () => { Backend.offline = false; showLoading(); bootServer(); };
+    $('#retry-boot').onclick = () => { Backend.offline = false; showLoading(); boot(); };
   }
   const serverError = (r) => ({
     invalid: tr('Wrong email or password.', 'Email atau password salah.'),
@@ -2455,12 +2821,32 @@
     if (me) toast(tr(`Welcome, ${me.name.split(' ')[0]}!`, `Halo, ${me.name.split(' ')[0]}!`));
   }
 
+  let formMode = null;
+  async function bootForm(slug) {
+    let info = null;
+    try {
+      if (Backend.serverAuth) {
+        const b = await Backend.brand(slug);
+        if (b.ok && b.status !== 'suspended') info = { id: b.id, config: b.config, programs: b.programs || [] };
+      } else {
+        wsIndex = await Backend.list();
+        if (!wsIndex.length && Backend.mode === 'local') { for (const k of ['alphaleaders', 'piwa', 'iplus']) await Backend.create(buildWorkspace(k, true)); }
+        const w = tenantBySlug(slug);
+        if (w && w.status !== 'suspended') info = { id: w.id, config: w.config, programs: (w.programs || []).map((p) => ({ id: p.id, name: p.name })) };
+      }
+    } catch (e) { renderOffline(); return; }
+    if (!info) { showGate(`<div class="gate-card"><div class="gate-title">${tr('This form is not available', 'Form ini tidak tersedia')}</div></div>`); return; }
+    formMode = { slug, info };
+    renderPublicForm(slug, info);
+  }
   async function boot() {
     bindChrome();
     document.documentElement.lang = LANG;
     showLoading();
     if (!Backend) Backend = await pickBackend();
     setSync(Backend.mode === 'local' ? 'local' : 'cloud');
+    const formSlug = (new URLSearchParams(location.search).get('form') || '').toLowerCase();
+    if (formSlug) { await bootForm(formSlug); return; }
     if (Backend.serverAuth) { try { await bootServer(); } catch (e) { renderNeutralLogin(tr('Cannot reach the server. Check your connection and reload.', 'Server tidak bisa dihubungi. Cek koneksi lalu muat ulang.')); } return; }
     try { platform = await Backend.getPlatform(); } catch (e) { platform = null; }
     if (!platform || !Array.isArray(platform.admins) || !platform.admins.length) platform = defaultPlatform();

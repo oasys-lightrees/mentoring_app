@@ -28,7 +28,8 @@ function createServer() {
     Utilities: {
       getUuid: () => crypto.randomUUID(),
       computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)),
-      DigestAlgorithm: { SHA_256: 'SHA_256' }, Charset: { UTF_8: 'UTF_8' }
+      DigestAlgorithm: { SHA_256: 'SHA_256' }, Charset: { UTF_8: 'UTF_8' },
+      formatDate: (d, tz, f) => new Date(d.getTime() + 7 * 3600000).toISOString().slice(0, 10) // Asia/Jakarta, yyyy-MM-dd only
     },
     ContentService: { createTextOutput: (t) => ({ setMimeType() { return this; }, getContent: () => t }), MimeType: { JSON: 'json' } },
     Logger: { log: (m) => logs.push(String(m)) },

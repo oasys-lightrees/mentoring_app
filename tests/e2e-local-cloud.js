@@ -2,9 +2,13 @@ let pwm; try { pwm = require('playwright'); } catch (e) { pwm = require('/opt/no
 const { chromium } = pwm;
 const path = require('path');
 const fs = require('fs');
-const BASE = 'file://' + path.join(__dirname, '..', 'index.html');
+let BASE = process.env.BASE;
 const MODE = process.argv[2] || 'local';
+// Any check printed as `false` fails the run.
+let failed = false; const log0 = console.log; console.log = (...a) => { if (a.some((x) => x === false)) failed = true; log0(...a); };
 (async () => {
+  const web = BASE ? null : await require('./static-server').serve(path.join(__dirname, '..'));
+  if (web) BASE = web.url + 'index.html';
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 1360, height: 900 } });
   if (MODE === 'cloud') await ctx.addInitScript({ content: fs.readFileSync(path.join(__dirname, 'mock-artifact-db.js'), 'utf8') });
@@ -83,5 +87,9 @@ const MODE = process.argv[2] || 'local';
     console.log('mobile scrollWidth', await m.evaluate(() => document.documentElement.scrollWidth));
   }
   console.log('ERRORS', errs);
+  if (errs.length) failed = true;
   await b.close();
+  if (web) web.close();
+  if (failed) { log0('SOME CHECKS FAILED'); process.exit(1); }
+  log0(`${MODE}: all checks passed`);
 })().catch(async (e) => { console.log('FAIL', e.message.split('\n')[0]); console.log('STACK', (e.stack.match(/e2e-local-cloud.js:(\d+)/) || [])[1]); process.exit(1); });

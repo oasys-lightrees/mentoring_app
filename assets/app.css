@@ -324,3 +324,49 @@ tr.clickable:hover td { background: var(--hover); }
 .choice { display: flex; gap: 10px; align-items: center; border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 12px; background: var(--card); cursor: pointer; font: inherit; color: var(--ink); text-align: left; }
 .choice:hover { border-color: var(--accent); }
 .gate-link { background: none; border: 0; color: var(--muted); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; padding: 0; align-self: center; }
+
+/* ---------- Reports ---------- */
+.chart-wrap { overflow-x: auto; margin-top: 8px; }
+.chart { width: 100%; min-width: 640px; height: auto; display: block; }
+.chart .bar { fill: color-mix(in srgb, var(--accent) 55%, var(--card)); }
+.chart .bar-cur { fill: var(--accent); }
+.chart g:hover .bar { filter: brightness(1.1); }
+.chart .bar-val { font-size: 11px; font-weight: 800; fill: var(--ink-2); }
+.chart .bar-lab { font-size: 11px; fill: var(--muted); font-weight: 600; }
+.chart .target-line { stroke: var(--gold, #d4a017); stroke-width: 2; stroke-dasharray: 6 5; }
+.total-row td { border-top: 2px solid var(--line-2); }
+.meter { display: inline-block; width: 64px; height: 6px; border-radius: 4px; background: var(--soft); overflow: hidden; vertical-align: middle; margin-right: 6px; }
+.meter span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.ok-text { color: var(--ok); font-weight: 800; }
+
+/* ---------- Week calendar ---------- */
+.week-nav { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.week-nav b { margin-left: 6px; }
+.week-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.week-day { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px; min-height: 140px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.week-day.is-today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.week-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.week-head b { font-size: 18px; color: var(--ink); letter-spacing: 0; }
+.week-item { text-align: left; border: 0; border-left: 3px solid var(--c); background: color-mix(in srgb, var(--c) 12%, var(--card)); border-radius: 8px; padding: 5px 7px; font: inherit; color: var(--ink); cursor: pointer; display: flex; flex-direction: column; min-width: 0; }
+.week-item:hover { background: color-mix(in srgb, var(--c) 22%, var(--card)); }
+.week-item.st-done { opacity: .7; }
+.week-item.st-cancelled, .week-item.st-noshow { opacity: .55; text-decoration: line-through; }
+.wi-time { font-size: 11px; font-weight: 800; color: var(--ink-2); }
+.wi-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wi-meta { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.week-empty { color: var(--line-2); font-size: 12px; text-align: center; margin-top: 8px; }
+@media (max-width: 900px) { .week-grid { grid-template-columns: 1fr; } .week-day { min-height: 0; } .week-empty { display: none; } }
+
+/* ---------- Public lead form & settings ---------- */
+.form-card { max-width: 480px; }
+.success-mark { width: 56px; height: 56px; border-radius: 50%; background: var(--ok-bg); color: var(--ok); display: grid; place-items: center; font-size: 28px; font-weight: 800; align-self: center; }
+.hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.copy-row { display: flex; gap: 6px; align-items: center; }
+.copy-row input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+/* ---------- Print (Reports → PDF) ---------- */
+@media print {
+  .topbar, .tabs, .toolbar, .imp-banner, #toast, .seg, select { display: none !important; }
+  body { background: #fff; }
+  .card { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
+}

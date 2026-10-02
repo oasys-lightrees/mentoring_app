@@ -144,6 +144,26 @@ assert.ok(srv.post({ action: 'batch', token: OPS, ops: [{ op: 'set', path: 'plat
 const p3 = srv.post({ action: 'get', token: P, path: 'platform/main' }).data.admins;
 assert.ok(p3.find((a) => a.id === 'lt-owner').email === 'super@lightech.co.id' && !p3.find((a) => a.id === 'lt-3') && p3.find((a) => a.id === 'lt-2').name === 'Ops Team'); ok('Lightech Admin can only edit their own profile');
 
+// Public lead form (web / Meta ads landing page → CRM)
+const capLead = { action: 'capture', slug: 'alphaleaders', name: 'Form Lead', phone: '0812 7777 8888', email: 'f@x.id', message: 'Interested' };
+assert.strictEqual(srv.post(capLead).error, 'closed'); ok('public form is closed until the company switches it on');
+const m5 = srv.post({ action: 'get', token: A, path: 'ws/A' }).data;
+m5.config.publicForm = true; m5.config.stages = [{ id: 'new', type: 'open' }, { id: 'won', type: 'won' }]; m5.programs = [{ id: 'P1', name: 'Mastery', price: 25000000 }];
+assert.ok(srv.post({ action: 'batch', token: A, ops: [{ op: 'set', path: 'ws/A', data: m5 }] }).ok);
+const br = srv.post({ action: 'brand', slug: 'alphaleaders' });
+assert.ok(br.config.publicForm && br.programs.length === 1 && !('price' in br.programs[0])); ok('form page gets program names, never prices or team data');
+assert.ok(srv.post(Object.assign({}, capLead, { programId: 'P1' })).ok);
+const capped = srv.post({ action: 'list', token: A, collection: 'ws/A/leads' }).docs.map((d) => d.data).find((l) => l.name === 'Form Lead');
+assert.ok(capped && capped.stageId === 'new' && capped.ownerId === 'a-bd' && capped.value === 25000000 && capped.source === 'Website form'); ok('form submission lands in the first stage, auto-assigned to a BD, valued from the program');
+const before = srv.post({ action: 'list', token: A, collection: 'ws/A/leads' }).docs.length;
+assert.ok(srv.post(Object.assign({}, capLead, { phone: '+62 812-7777-8888' })).duplicate); ok('same WhatsApp number is not added twice');
+assert.ok(srv.post(Object.assign({}, capLead, { phone: '081300001111', website: 'http://spam' })).ok);
+assert.strictEqual(srv.post({ action: 'list', token: A, collection: 'ws/A/leads' }).docs.length, before); ok('honeypot silently drops bots');
+assert.strictEqual(srv.post(Object.assign({}, capLead, { phone: '123' })).error, 'invalid'); ok('invalid phone rejected');
+let busy = false; for (let i = 0; i < 40 && !busy; i++) busy = srv.post(Object.assign({}, capLead, { name: 'Flood ' + i, phone: '0819' + String(1000000 + i) })).error === 'busy';
+assert.ok(busy); ok('flooding the form is rate-limited');
+assert.ok(srv.post({ action: 'audit', token: P, limit: 500 }).rows.some((x) => x.action === 'capture')); ok('form submissions are in the audit log');
+
 // Suspend → sign-in blocked and live session ends
 const metaNow = srv.post({ action: 'get', token: P, path: 'ws/A' }).data; metaNow.status = 'suspended';
 assert.ok(srv.post({ action: 'batch', token: P, ops: [{ op: 'set', path: 'ws/A', data: metaNow }] }).ok);
