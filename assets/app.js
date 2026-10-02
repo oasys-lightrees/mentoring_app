@@ -245,8 +245,10 @@
         if (pme && !me) scheduleRender();
       }, (e) => console.warn('index listener', e));
     };
+    const forget = (id) => { Array.from(shadow.keys()).forEach((p) => { if (p.startsWith('ws/' + id + '/')) shadow.delete(p); }); };
     B.open = (id) => new Promise((resolve) => {
       B.close();
+      forget(id); // a re-opened workspace starts from what the server has now
       const data = { id, leads: [], sessions: [], clients: [] };
       let pending = KINDS.length + 1, done = false;
       const ready = () => { if (!done && --pending <= 0) { done = true; resolve(data); } };
@@ -272,9 +274,9 @@
             }
             const obj = clone(ch.doc.data());
             const j = JSON.stringify(obj);
-            if (shadow.get(p) === j) return;
-            shadow.set(p, j);
             const i = arr.findIndex((x) => x.id === ch.doc.id);
+            if (shadow.get(p) === j && i >= 0) return;
+            shadow.set(p, j);
             if (i >= 0) { if (JSON.stringify(arr[i]) === j) return; arr[i] = obj; } else arr.push(obj);
             changed = true;
           });
@@ -323,6 +325,186 @@
     return B;
   }
 
+  // Server backend (Google Apps Script API): sign-in, tenant isolation and audit happen on the server.
+  const ROUTES = ['dashboard', 'pipeline', 'leads', 'sessions', 'clients', 'team', 'settings', 'portal', 'companies', 'admins', 'audit'];
+  function makeRemoteBackend(url) {
+    const K_TOKEN = 'mcrm:token';
+    const KINDS = ['leads', 'sessions', 'clients'];
+    const shadow = new Map();
+    const queue = new Map();
+    let flushing = null, dirty = false, pollT = null, since = 0, renderT = null;
+    const B = { mode: 'remote', serverAuth: true, readOnly: false, session: null };
+    async function call(action, payload) {
+      const body = JSON.stringify(Object.assign({ action, token: LS.get(K_TOKEN) || '' }, payload || {}));
+      let res;
+      for (let i = 0; ; i++) {
+        try { const r = await fetch(url, { method: 'POST', body, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow' }); res = await r.json(); break; }
+        catch (e) { if (i < 2) { await sleep(800 * (i + 1)); continue; } setSync('error'); throw e; }
+      }
+      if (res && !res.ok && res.error === 'auth' && action !== 'login' && action !== 'whoami' && B.session) {
+        LS.del(K_TOKEN); B.session = null; B.close();
+        toast(tr('Your session has ended. Please sign in again.', 'Sesi Anda berakhir. Silakan masuk lagi.'));
+        S = null; me = null; pme = null; boot();
+      }
+      return res || { ok: false, error: 'server' };
+    }
+    B.call = call;
+    B.login = async (email, password, slug) => { const r = await call('login', { email, password, slug: slug || '' }); if (r.ok) { LS.set(K_TOKEN, r.token); B.session = r.session; } return r; };
+    B.logout = async () => { try { await call('logout'); } catch (e) { /* ignore */ } LS.del(K_TOKEN); B.session = null; B.close(); };
+    B.whoami = async () => {
+      if (!LS.get(K_TOKEN)) return null;
+      try { const r = await call('whoami'); if (r.ok) { B.session = r.session; return r.session; } } catch (e) { /* offline */ }
+      LS.del(K_TOKEN); return null;
+    };
+    B.brand = (slug) => call('brand', { slug });
+    B.audit = (limit) => call('audit', { limit: limit || 200 });
+    const allowed = (p) => {
+      const ss = B.session; if (!ss) return false;
+      if (ss.kind === 'platform') return true;
+      const base = 'ws/' + ss.wsId;
+      if (p === base) return ss.role === 'superadmin' || ss.role === 'admin';
+      if (ss.role === 'client') return p.indexOf(base + '/sessions/') === 0;
+      return p.indexOf(base + '/') === 0;
+    };
+    function docsOf(d) {
+      const m = new Map();
+      m.set('ws/' + d.id, metaFields(d));
+      KINDS.forEach((k) => (d[k] || []).forEach((x) => m.set(`ws/${d.id}/${k}/${x.id}`, x)));
+      return m;
+    }
+    async function sendOps(ops) {
+      for (let i = 0; i < ops.length; i += 200) {
+        const chunk = ops.slice(i, i + 200);
+        const r = await call('batch', { ops: chunk.map((o) => (o.del ? { op: 'del', path: o.p } : { op: 'set', path: o.p, data: JSON.parse(o.j) })) });
+        if (!r.ok) {
+          if (r.error === 'forbidden') toast(tr('You do not have permission for that change.', 'Anda tidak punya izin untuk perubahan itu.'));
+          else if (r.error !== 'auth') { toast(tr('Could not save. Check your connection and try again.', 'Gagal menyimpan. Cek koneksi lalu coba lagi.')); setSync('error'); }
+          throw new Error(r.error || 'save');
+        }
+        chunk.forEach((o) => { if (o.del) shadow.delete(o.p); else shadow.set(o.p, o.j); });
+      }
+    }
+    B.flush = function (data) {
+      const d0 = data || S;
+      if (d0) queue.set(d0.id, d0);
+      if (flushing) { dirty = true; return flushing; }
+      setSync('saving');
+      flushing = (async () => {
+        do {
+          dirty = false;
+          const sets = Array.from(queue.values()); queue.clear();
+          const ops = [];
+          sets.forEach((d) => {
+            const want = docsOf(d);
+            const prefix = 'ws/' + d.id;
+            want.forEach((obj, p) => { if (!allowed(p)) return; const j = JSON.stringify(obj); if (shadow.get(p) !== j) ops.push({ p, j }); });
+            shadow.forEach((_, p) => { if (p.startsWith(prefix + '/') && !want.has(p) && allowed(p)) ops.push({ p, del: true }); });
+          });
+          if (ops.length) await sendOps(ops);
+        } while (dirty || queue.size);
+      })().then(() => setSync('cloud')).catch(() => {}).finally(() => { flushing = null; });
+      return flushing;
+    };
+    B.idle = () => flushing || Promise.resolve();
+    B.save = () => { B.flush(); };
+    B.list = async () => {
+      const r = await call('list', { collection: 'ws' });
+      if (!r.ok) return [];
+      since = Math.max(since, r.now || 0);
+      return r.docs.map((d) => { shadow.set('ws/' + d.id, JSON.stringify(d.data)); return Object.assign({ id: d.id }, clone(d.data)); });
+    };
+    B.open = async (id) => {
+      Array.from(shadow.keys()).forEach((p) => { if (p.startsWith('ws/' + id + '/')) shadow.delete(p); });
+      const m = await call('get', { path: 'ws/' + id });
+      if (!m.ok || !m.exists) return null;
+      const data = Object.assign({ id, leads: [], sessions: [], clients: [] }, clone(m.data));
+      shadow.set('ws/' + id, JSON.stringify(m.data));
+      const lists = await Promise.all(KINDS.map((k) => call('list', { collection: `ws/${id}/${k}` })));
+      lists.forEach((r, i) => {
+        if (!r.ok) return;
+        since = Math.max(since, r.now || 0);
+        data[KINDS[i]] = r.docs.map((d) => { shadow.set(`ws/${id}/${KINDS[i]}/${d.id}`, JSON.stringify(d.data)); return clone(d.data); });
+      });
+      startPoll();
+      return data;
+    };
+    B.create = async (d) => { await B.flush(d); wsIndex.push(Object.assign({ id: d.id }, metaFields(d))); };
+    B.saveMeta = async (id, meta) => {
+      const cur = wsIndex.find((w) => w.id === id);
+      const body = metaFields(Object.assign({}, cur, meta));
+      await sendOps([{ p: 'ws/' + id, j: JSON.stringify(body) }]);
+      Object.assign(cur, body);
+    };
+    B.remove = async (id) => {
+      const lists = await Promise.all(KINDS.map((k) => call('list', { collection: `ws/${id}/${k}` })));
+      const ops = [];
+      lists.forEach((r, i) => (r.docs || []).forEach((d) => ops.push({ p: `ws/${id}/${KINDS[i]}/${d.id}`, del: true })));
+      ops.push({ p: 'ws/' + id, del: true });
+      await sendOps(ops);
+      wsIndex = wsIndex.filter((w) => w.id !== id);
+    };
+    B.stats = async (id) => {
+      const lists = await Promise.all(KINDS.map((k) => call('list', { collection: `ws/${id}/${k}` })));
+      const out = {};
+      lists.forEach((r, i) => { out[KINDS[i]] = (r.docs || []).map((d) => d.data); });
+      return out;
+    };
+    B.getPlatform = async () => { const r = await call('get', { path: 'platform/main' }); return r.ok && r.exists ? clone(r.data) : null; };
+    B.savePlatform = async (p) => { await sendOps([{ p: 'platform/main', j: JSON.stringify(p) }]); };
+    function apply(p, d) {
+      const parts = p.split('/');
+      if (p === 'platform/main') { if (d && pme) { platform = d; const a = (d.admins || []).find((x) => x.id === pme.id); if (a) Object.assign(pme, a); } return true; }
+      if (parts[0] !== 'ws') return false;
+      const id = parts[1];
+      if (parts.length === 2) {
+        const i = wsIndex.findIndex((w) => w.id === id);
+        if (!d) { if (i >= 0) wsIndex.splice(i, 1); return true; }
+        const m = Object.assign({ id }, clone(d));
+        if (i >= 0) wsIndex[i] = m; else wsIndex.push(m);
+        if (S && S.id === id) { Object.assign(S, clone(d)); migrate(S); if (me && !me.platform) me = S.accounts.find((a) => a.id === me.id && a.active !== false) || null; }
+        return true;
+      }
+      if (!(S && S.id === id) || parts.length !== 4) return false;
+      const arr = S[parts[2]]; if (!arr) return false;
+      const k = arr.findIndex((x) => x.id === parts[3]);
+      if (!d) { if (k >= 0) arr.splice(k, 1); return k >= 0; }
+      if (k >= 0) arr[k] = clone(d); else arr.push(clone(d));
+      return true;
+    }
+    async function poll() {
+      if (document.hidden || flushing || !B.session) return;
+      let r;
+      try { r = await call('changes', { since }); } catch (e) { return; }
+      if (!r.ok) return;
+      since = Math.max(since, r.now || 0);
+      let changed = false;
+      r.docs.forEach((d) => {
+        if (d.deleted) { if (shadow.has(d.path)) { shadow.delete(d.path); changed = apply(d.path, null) || changed; } return; }
+        const j = JSON.stringify(d.data);
+        if (shadow.get(d.path) === j) return;
+        shadow.set(d.path, j);
+        changed = apply(d.path, d.data) || changed;
+      });
+      if (changed) scheduleRender();
+    }
+    function startPoll() { if (!pollT) pollT = setInterval(poll, 15000); }
+    B.startPoll = startPoll;
+    B.close = () => { if (pollT) { clearInterval(pollT); pollT = null; } };
+    function scheduleRender() {
+      clearTimeout(renderT);
+      renderT = setTimeout(() => {
+        const ae = document.activeElement;
+        const typing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && (ae.closest('#view') || ae.closest('#drawer-panel') || ae.closest('#modal'));
+        if (typing) { ae.addEventListener('blur', scheduleRender, { once: true }); return; }
+        if (pme && !me) { renderConsole(); return; }
+        if (!S || !me) return;
+        applyBrand(); renderMain();
+        if (drawerState && $('#drawer').classList.contains('open')) reopenDrawer();
+      }, 120);
+    }
+    return B;
+  }
+
   function save() { if (S) Backend.save(); }
 
   // =====================================================================
@@ -346,7 +528,7 @@
       d.accounts.unshift({ id: 'u-owner', name: 'Owner', email: 'owner@demo.local', role: 'superadmin' });
       delete d.team;
     }
-    d.accounts.forEach((a) => { if (!a.pw) setPassword(a, 'demo'); if (a.active == null) a.active = true; });
+    d.accounts.forEach((a) => { if (!a.pw && !(Backend && Backend.serverAuth)) setPassword(a, 'demo'); if (a.active == null) a.active = true; });
     d.leads = d.leads || []; d.sessions = d.sessions || []; d.clients = d.clients || []; d.programs = d.programs || [];
     d.sessions.forEach((s) => { if (!Array.isArray(s.actionItems)) s.actionItems = []; });
     d.name = d.name || (d.config && d.config.brandName) || 'Company';
@@ -771,6 +953,7 @@
     $('#login-form').onsubmit = (e) => { e.preventDefault(); neutralSignIn($('#login-email').value.trim().toLowerCase(), $('#login-pw').value); };
   }
   async function neutralSignIn(email, pw) {
+    if (Backend.serverAuth) { await serverLogin(email, pw, '', (msg) => renderNeutralLogin(msg, email)); return; }
     const pa = (platform.admins || []).find((a) => (a.email || '').toLowerCase() === email && a.active !== false);
     if (pa && checkPassword(pa, pw)) { platformLogin(pa); return; }
     const hits = [];
@@ -818,12 +1001,16 @@
     if ($('#login-form')) $('#login-form').onsubmit = (e) => {
       e.preventDefault();
       const email = $('#login-email').value.trim().toLowerCase();
+      if (Backend.serverAuth) { const slugNow = S.slug; serverLogin(email, $('#login-pw').value, slugNow, (msg) => { bootServer().then(() => { if (S && !me) renderTenantLogin(msg, email); }); }); return; }
       const a = S.accounts.find((x) => (x.email || '').toLowerCase() === email);
       if (!a || !checkPassword(a, $('#login-pw').value)) { renderTenantLogin(tr('Wrong email or password.', 'Email atau password salah.'), email); return; }
       if (a.active === false) { renderTenantLogin(tr('This account is inactive. Contact your admin.', 'Akun ini nonaktif. Hubungi admin.'), email); return; }
       login(a);
     };
-    $$('[data-demo]').forEach((b) => b.onclick = () => login(acc(b.dataset.demo)));
+    $$('[data-demo]').forEach((b) => b.onclick = () => {
+      if (Backend.serverAuth) { const a = acc(b.dataset.demo); const slugNow = S.slug; serverLogin(a.email, 'demo', slugNow, (msg) => { bootServer().then(() => { if (S && !me) renderTenantLogin(msg, a.email); }); }); return; }
+      login(acc(b.dataset.demo));
+    });
     $('#other-account').onclick = () => { LS.del(K_TENANT); S = null; me = null; renderNeutralLogin(); };
   }
   function login(a) {
@@ -832,7 +1019,11 @@
     render();
     toast(tr(`Welcome, ${a.name.split(' ')[0]}!`, `Halo, ${a.name.split(' ')[0]}!`));
   }
-  function logout() { LS.del(K_AUTH(S.id)); me = null; closeDrawer(); closeModal(); render(); }
+  async function logout() {
+    LS.del(K_AUTH(S.id)); me = null; closeDrawer(); closeModal();
+    if (Backend.serverAuth) { if (Backend.idle) await Backend.idle(); await Backend.logout(); location.hash = ''; await bootServer(); return; }
+    render();
+  }
 
   // =====================================================================
   // Lightech Console (platform)
@@ -843,7 +1034,11 @@
     location.hash = '#companies';
     renderConsole();
   }
-  function platformLogout() { LS.del(K_PAUTH); pme = null; S = null; me = null; Backend.close(); location.hash = ''; renderNeutralLogin(); }
+  async function platformLogout() {
+    LS.del(K_PAUTH); pme = null; S = null; me = null; Backend.close(); location.hash = '';
+    if (Backend.serverAuth) await Backend.logout();
+    renderNeutralLogin();
+  }
   async function openCompany(id) {
     showLoading(tr('Opening company…', 'Membuka company…'));
     if (!(await activate(id))) { renderConsole(); return; }
@@ -871,9 +1066,12 @@
     $('#btn-add-lead').hidden = true; $('#btn-add-session').hidden = true; $('#console-back').hidden = true; $('#imp-banner').hidden = true;
     $('#me-chip').innerHTML = `<span class="avatar">${esc(initials(pme.name))}</span><span><div class="me-name">${esc(pme.name)}</div><div class="me-role">${pme.role === 'owner' ? 'Lightech Super Admin' : 'Lightech Admin'}</div></span><button type="button" id="btn-logout">${tr('Sign out', 'Keluar')}</button>`;
     $('#btn-logout').onclick = platformLogout;
-    const tab = location.hash === '#admins' ? 'admins' : 'companies';
-    $('#tabs').innerHTML = [['companies', tr('Companies', 'Company')], ['admins', tr('Lightech admins', 'Admin Lightech')]].map(([k, t]) => `<a href="#${k}" class="${k === tab ? 'active' : ''}">${esc(t)}</a>`).join('');
-    if (tab === 'admins') renderAdmins(); else renderCompanies();
+    const tabs = [['companies', tr('Companies', 'Company')], ['admins', tr('Lightech admins', 'Admin Lightech')]];
+    if (Backend.audit) tabs.push(['audit', 'Audit log']);
+    const h = location.hash.slice(1);
+    const tab = tabs.some((t) => t[0] === h) ? h : 'companies';
+    $('#tabs').innerHTML = tabs.map(([k, t]) => `<a href="#${k}" class="${k === tab ? 'active' : ''}">${esc(t)}</a>`).join('');
+    if (tab === 'admins') renderAdmins(); else if (tab === 'audit') renderAudit(); else renderCompanies();
   }
 
   function renderCompanies() {
@@ -889,7 +1087,7 @@
       return { leads: s.leads.length, won: won.length, revenue: won.reduce((a, l) => a + (Number(l.value) || 0), 0), clients: s.clients.filter((c) => c.status === 'active').length, last };
     };
     const totals = list.reduce((t, w) => { const s = statOf(w.id); if (s) { t.leads += s.leads; t.revenue += s.revenue; t.clients += s.clients; } return t; }, { leads: 0, revenue: 0, clients: 0 });
-    const weak = (platform.admins || []).filter((a) => checkPassword(a, 'demo'));
+    const weak = (platform.admins || []).filter((a) => a.defaultPw || checkPassword(a, 'demo'));
     $('#view').innerHTML = `
       <div class="page-head">
         <div><div class="eyebrow">Lightech Console</div><h1>${tr('Companies', 'Company')}</h1><div class="muted small">${tr('Every company gets its own white-label app. Users only ever see their own brand.', 'Setiap company punya app white-label sendiri. User hanya melihat brand-nya.')}</div></div>
@@ -922,6 +1120,21 @@
     const missing = list.filter((w) => !consoleStats[w.id]);
     if (missing.length) Promise.all(missing.map((w) => Backend.stats(w.id).then((s) => { consoleStats[w.id] = s; }).catch(() => { consoleStats[w.id] = { leads: [], sessions: [], clients: [] }; })))
       .then(() => { if (pme && !me && location.hash !== '#admins') renderCompanies(); });
+  }
+
+  async function renderAudit() {
+    $('#view').innerHTML = `<div class="page-head"><div><div class="eyebrow">Lightech Console</div><h1>Audit log</h1><div class="muted small">${tr('Every sign-in and change, recorded on the server. Read-only.', 'Setiap login & perubahan, tercatat di server. Tidak bisa diubah.')}</div></div></div><div class="card empty">${tr('Loading…', 'Memuat…')}</div>`;
+    let r;
+    try { r = await Backend.audit(300); } catch (e) { r = { ok: false }; }
+    if (!pme || me || location.hash !== '#audit') return;
+    const coName = (id) => (id === 'lightech' ? 'Lightech' : ((wsIndex.find((w) => w.id === id) || {}).name || id || '—'));
+    const label = { login: tr('Signed in', 'Login'), login_failed: tr('Failed sign-in', 'Login gagal'), save: tr('Saved', 'Simpan'), delete: tr('Deleted', 'Hapus'), setup: 'Setup' };
+    const rows = (r.ok && r.rows) || [];
+    $('#view').innerHTML = `<div class="page-head"><div><div class="eyebrow">Lightech Console</div><h1>Audit log</h1><div class="muted small">${tr('Every sign-in and change, recorded on the server. Read-only.', 'Setiap login & perubahan, tercatat di server. Tidak bisa diubah.')}</div></div></div>
+      <div class="card table-card"><div class="table-wrap"><table>
+        <thead><tr><th>${tr('Time', 'Waktu')}</th><th>${tr('Who', 'Siapa')}</th><th>Company</th><th>${tr('Action', 'Aksi')}</th><th>${tr('Record', 'Data')}</th></tr></thead>
+        <tbody>${rows.map((x) => `<tr><td class="small nowrap">${esc(fmtDateTime(x.time))}</td><td class="small">${esc(x.actor)}</td><td class="small">${esc(coName(x.company))}</td><td>${x.action === 'login_failed' || x.action === 'delete' ? `<span class="badge badge-red">${esc(label[x.action] || x.action)}</span>` : `<span class="badge">${esc(label[x.action] || x.action)}</span>`}</td><td class="small muted">${esc(x.path || '')}${x.detail ? ' · ' + esc(x.detail) : ''}</td></tr>`).join('') || `<tr><td colspan="5" class="empty">${r.ok ? tr('No activity yet.', 'Belum ada aktivitas.') : tr('Could not load the audit log.', 'Audit log tidak bisa dimuat.')}</td></tr>`}</tbody>
+      </table></div></div>`;
   }
 
   function slugProblem(sl, selfId) {
@@ -1004,7 +1217,7 @@
           <td><div class="row" style="flex-wrap:nowrap"><span class="avatar">${esc(initials(a.name))}</span><b>${esc(a.name)}</b>${a.id === pme.id ? ` <span class="badge badge-blue">${tr('You', 'Anda')}</span>` : ''}</div></td>
           <td class="small">${esc(a.email)}</td>
           <td><span class="badge">${a.role === 'owner' ? 'Super Admin' : 'Admin'}</span></td>
-          <td>${a.active !== false ? `<span class="badge badge-green">${tr('Active', 'Aktif')}</span>` : `<span class="badge">${tr('Inactive', 'Nonaktif')}</span>`}${checkPassword(a, 'demo') ? ` <span class="badge badge-amber">${tr('default password', 'password default')}</span>` : ''}</td>
+          <td>${a.active !== false ? `<span class="badge badge-green">${tr('Active', 'Aktif')}</span>` : `<span class="badge">${tr('Inactive', 'Nonaktif')}</span>`}${a.defaultPw || checkPassword(a, 'demo') ? ` <span class="badge badge-amber">${tr('default password', 'password default')}</span>` : ''}</td>
           <td class="right">${pme.role === 'owner' || a.id === pme.id ? `<button class="btn btn-sm" type="button" data-admin-edit="${esc(a.id)}">Edit</button>` : ''}</td>
         </tr>`).join('')}</tbody>
       </table></div></div>`;
@@ -2064,7 +2277,7 @@
     $('#modal').classList.add('open');
     $('#modal').setAttribute('aria-hidden', 'false');
     const first = $('#modal-form input:not([type=hidden]):not([disabled]), #modal-form select:not([disabled]), #modal-form textarea');
-    if (first) setTimeout(() => first.focus(), 30);
+    if (first) first.focus();
   }
   function closeModal() { $('#modal').classList.remove('open'); $('#modal').setAttribute('aria-hidden', 'true'); modalSubmit = null; }
   function confirmDialog(title, msg, okLabel, onOk) { openModal(title, `<p style="margin:0">${esc(msg)}</p>${modalFoot(okLabel, 'btn-danger-solid')}`, () => onOk()); }
@@ -2099,17 +2312,78 @@
     document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if ($('#modal').classList.contains('open')) closeModal(); else closeDrawer(); });
     window.addEventListener('hashchange', () => {
       const tok = location.hash.slice(1).toLowerCase();
-      const t = tenantBySlug(tok);
-      if (t && (!S || S.id !== t.id) && !(me && me.platform)) { LS.set(K_TENANT, tok); boot(); return; }
+      if (Backend && Backend.serverAuth) {
+        if (tok && !ROUTES.includes(tok) && (!S || S.slug !== tok) && !(me && me.platform)) { boot(); return; }
+      } else {
+        const t = tenantBySlug(tok);
+        if (t && (!S || S.id !== t.id) && !(me && me.platform)) { LS.set(K_TENANT, tok); boot(); return; }
+      }
       if (me) { closeDrawer(); renderMain(); } else if (pme) renderConsole();
     });
   }
 
   async function pickBackend() {
+    const api = (window.MCRM_CONFIG || {}).apiUrl;
+    if (api) return makeRemoteBackend(api);
     if (!(window.claude && typeof window.claude.use === 'function')) return LocalBackend;
     let db = null;
     try { db = await window.claude.use('db'); } catch (e) { db = null; }
     return db ? makeCloudBackend(db) : LocalBackend;
+  }
+
+  async function bootServer() {
+    S = null; me = null; pme = null;
+    if (!platform) platform = { admins: [] };
+    const tok = location.hash.slice(1).toLowerCase();
+    const isRoute = !tok || ROUTES.includes(tok);
+    if (tok === 'lightech' || tok === 'console') LS.del(K_TENANT);
+    else if (!isRoute) LS.set(K_TENANT, tok);
+    const sess = await Backend.whoami();
+    const wantSlug = LS.get(K_TENANT);
+    if (sess && sess.kind === 'platform' && (isRoute || tok === 'lightech' || tok === 'console')) {
+      platform = (await Backend.getPlatform()) || { admins: [] };
+      pme = Object.assign({ id: sess.adminId, name: sess.name, email: sess.email, role: sess.role }, (platform.admins || []).find((a) => a.id === sess.adminId) || {});
+      wsIndex = await Backend.list();
+      if (!['companies', 'admins', 'audit'].includes(tok)) location.hash = '#companies';
+      renderConsole();
+      return;
+    }
+    if (sess && sess.kind === 'tenant' && !(tok === 'lightech' || tok === 'console')) {
+      wsIndex = await Backend.list();
+      const w = wsIndex.find((x) => x.id === sess.wsId);
+      if (w && (isRoute || !wantSlug || slugOf(w) === wantSlug)) {
+        LS.set(K_TENANT, slugOf(w));
+        if (await activate(w.id)) {
+          me = S.accounts.find((a) => a.id === sess.accountId) || null;
+          if (me) { if (!isRoute) location.hash = me.role === 'client' ? '#portal' : '#dashboard'; render(); return; }
+        }
+      }
+    }
+    if (wantSlug) {
+      const b = await Backend.brand(wantSlug);
+      if (b.ok) {
+        S = { id: b.id, slug: b.slug, status: b.status, name: b.name, config: b.config, accounts: b.chips || [], programs: [], leads: [], sessions: [], clients: [], preview: true };
+        me = null; applyBrand(); renderTenantLogin();
+        return;
+      }
+      LS.del(K_TENANT);
+    }
+    renderNeutralLogin();
+  }
+  const serverError = (r) => ({
+    invalid: tr('Wrong email or password.', 'Email atau password salah.'),
+    locked: tr('Too many failed attempts. Try again in 15 minutes.', 'Terlalu banyak percobaan gagal. Coba lagi 15 menit lagi.'),
+    suspended: tr('This workspace is inactive. Contact your administrator.', 'Workspace ini nonaktif. Hubungi administrator Anda.')
+  }[r && r.error] || (r && r.message) || tr('Sign-in failed. Try again.', 'Gagal masuk. Coba lagi.'));
+  async function serverLogin(email, pw, slug, onError) {
+    showLoading(tr('Signing in…', 'Masuk…'));
+    let r;
+    try { r = await Backend.login(email, pw, slug); } catch (e) { r = { ok: false, message: tr('Cannot reach the server.', 'Server tidak bisa dihubungi.') }; }
+    if (!r.ok) { onError(serverError(r)); return; }
+    if (r.session.kind === 'platform') LS.del(K_TENANT);
+    location.hash = '';
+    await bootServer();
+    if (me) toast(tr(`Welcome, ${me.name.split(' ')[0]}!`, `Halo, ${me.name.split(' ')[0]}!`));
   }
 
   async function boot() {
@@ -2117,7 +2391,8 @@
     document.documentElement.lang = LANG;
     showLoading();
     if (!Backend) Backend = await pickBackend();
-    setSync(Backend.mode === 'cloud' ? 'cloud' : 'local');
+    setSync(Backend.mode === 'local' ? 'local' : 'cloud');
+    if (Backend.serverAuth) { try { await bootServer(); } catch (e) { renderNeutralLogin(tr('Cannot reach the server. Check your connection and reload.', 'Server tidak bisa dihubungi. Cek koneksi lalu muat ulang.')); } return; }
     try { platform = await Backend.getPlatform(); } catch (e) { platform = null; }
     if (!platform || !Array.isArray(platform.admins) || !platform.admins.length) platform = defaultPlatform();
     try { wsIndex = await Backend.list(); } catch (e) { wsIndex = []; }

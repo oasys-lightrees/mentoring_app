@@ -3,18 +3,24 @@
 White-label **Lead → Deal → Client** CRM for coaching, mentoring, training and consulting companies.
 Each company (AlphaLeaders, PIWA, iPlus, …) gets its own branded app; Lightech manages all of them from one console. UI in **English / Bahasa Indonesia** (toggle top-right).
 
+## Where it runs
+
+| Mode | URL | Data & sign-in | Use for |
+|---|---|---|---|
+| **Production** | `lightech.co.id/alpha/` (static files) + Google Apps Script API | Google Sheet; sign-in, tenant isolation & audit log enforced **on the server** | Real companies — see [DEPLOY.md](DEPLOY.md) |
+| **Demo** | [Claude Artifact](https://claude.ai/artifact/PDk86467k37K7Qs4wWPKoh) | Artifact database, real-time | Presentations with example data |
+| **Local** | open `index.html` | This browser only | Offline demo / development |
+
+The app picks the mode automatically: `assets/config.js → apiUrl` set → Production; inside a Claude Artifact → Demo; otherwise Local.
+
 ## How people sign in
 
 | Who | Link | What they see |
 |---|---|---|
 | A company's team (e.g. AlphaLeaders) | app link + `#alphaleaders` | Only their brand: logo, colours, terminology, data. No other company is ever shown. |
-| Lightech admins | app link (no code) or `#lightech` → sign in with a Lightech account | **Lightech Console**: every company, stats, create / edit / suspend companies, open any company as Owner. |
+| Lightech admins | app link (no code) or `#lightech` | **Lightech Console**: every company, stats, create / edit / suspend companies, open any company as Owner, audit log (Production). |
 
-Cloud app: [Claude Artifact](https://claude.ai/artifact/PDk86467k37K7Qs4wWPKoh) · AlphaLeaders: `…/PDk86467k37K7Qs4wWPKoh#alphaleaders`
-
-**Demo credentials** (password `demo` everywhere — change before go-live):
-- Lightech Super Admin: `super@lightech.co.id`
-- Company owners: `owner@alphaleaders.id`, `owner@piwa.id`, `owner@iplus.id` (plus one-click demo buttons per role on each company's sign-in page)
+Demo credentials (Demo & Local modes, password `demo`): `super@lightech.co.id`, `owner@alphaleaders.id`, `owner@piwa.id`, `owner@iplus.id`, plus one-click buttons per role on each company's sign-in page. Production creates its own one-time admin password during setup.
 
 ## Features
 
@@ -32,21 +38,27 @@ Cloud app: [Claude Artifact](https://claude.ai/artifact/PDk86467k37K7Qs4wWPKoh) 
 ## Project layout
 
 ```
-index.html                  app shell (local mode)
+index.html                  app shell
+assets/config.js            deployment config (apiUrl)
 assets/presets.js           company templates, roles, permission matrix, reserved login codes
-assets/app.js               storage backends, tenants, Lightech console, RBAC, all views, EN/ID strings
+assets/app.js               storage backends (server / artifact / local), tenants, Lightech console, RBAC, views, EN/ID
 assets/app.css              Lightrees design system (navy/gold, Plus Jakarta Sans), light & dark
+server/Code.gs              Production API on Google Apps Script + Sheets (auth, isolation, audit)
+scripts/build-deploy.mjs    builds dist/alpha + dist/lightech-alpha.zip for lightech.co.id/alpha
 scripts/build-artifact.mjs  builds dist/artifact.html for the Claude Artifact
+tests/                      server isolation tests + browser end-to-end for all three modes
 ```
 
-Cloud data model: `platform/main` (Lightech admins) · `ws/{id}` (company: name, slug, status, config, accounts, programs) · `ws/{id}/leads|sessions|clients/{doc}`.
+## Tests
 
-Update the cloud app: `node scripts/build-artifact.mjs`, then republish `dist/artifact.html` with `assets/*` to the same artifact URL.
+`npm install && npx playwright install chromium && npm test` runs:
+- `tests/server.test.js`: 25 checks on the API (tenant isolation, password redaction, governance rules, lockout, suspension, audit)
+- `tests/e2e-server.js`: 17 browser checks against the real `server/Code.gs` through an in-memory Apps Script harness (also runs against the built package: `BASE=file://$PWD/dist/alpha/index.html`)
+- `tests/e2e-local-cloud.js local|cloud`: white-label flows, console, language toggle, suspension, data integrity when re-opening a company
 
-## Known limits (pilot stage)
+## Governance
 
-- **Isolation is enforced in the app UI, not on the server.** Everyone who can open the artifact link can technically read every company's records (including hashed passwords) through the browser. Fine for a demo / internal pilot; for real external companies, move to a backend with server-side tenant rules (Supabase RLS or Odoo).
-- On a Claude Artifact, only the owner's organization members (or people invited as Editor) can **save**; outside viewers are read-only. External company teams need the production deployment.
+Security, data protection (UU PDP) and change management: see [GOVERNANCE.md](GOVERNANCE.md).
 
 ## Roadmap
 
