@@ -177,5 +177,5 @@
     ['Client portal (own program & sessions)', 'Portal client (program & sesi sendiri)', ['client']]
   ];
   // Words that cannot be used as a company login slug (they are app routes).
-  window.RESERVED_SLUGS = ['dashboard', 'pipeline', 'leads', 'sessions', 'clients', 'team', 'settings', 'portal', 'companies', 'admins', 'lightech', 'console', 'login'];
+  window.RESERVED_SLUGS = ['dashboard', 'pipeline', 'leads', 'sessions', 'clients', 'team', 'settings', 'portal', 'companies', 'admins', 'lightech', 'console', 'login', 'audit', 'reports', 'calendar', 'join', 'apply', 'signup', 'api', 'admin', 'app'];
 })();

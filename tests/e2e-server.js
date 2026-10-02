@@ -59,6 +59,11 @@ const BASE = process.env.BASE || ('file://' + path.join(__dirname, '..', 'index.
   await p.goto(BASE + '#leads'); await p.waitForSelector('tbody');
   const rows = await p.$$eval('tbody tr.clickable', (r) => r.length);
   ok(`BD sees only own leads (${rows})`, rows > 0 && rows < 25);
+  const bdView = await p.evaluate(() => { const st = window.__mcrm.state; const r = st.leads.filter((l) => l.restricted); return { restricted: r.length, leaked: r.some((l) => l.name || l.phone) }; });
+  ok(`server sends other BDs' leads as numbers only (${bdView.restricted}), no names or phones`, bdView.restricted > 0 && !bdView.leaked);
+  await p.goto(BASE + '#dashboard'); await p.waitForSelector('.kpis');
+  const boardRows = await p.$$eval('.card:has(.card-title:text-matches("Leaderboard")) tbody tr', (r) => r.length);
+  ok(`BD dashboard leaderboard still ranks the whole team (${boardRows} people)`, boardRows > 1 && !(await txt()).includes('undefined'));
   await p.click('#btn-logout'); await p.waitForSelector('#login-form');
 
   // live update between two users
@@ -84,6 +89,33 @@ const BASE = process.env.BASE || ('file://' + path.join(__dirname, '..', 'index.
   await p.click('#btn-logout');
   await p.goto('about:blank'); await p.goto(BASE + '#piwa'); await p.waitForSelector('.gate-card');
   ok('suspended PIWA shows inactive notice', (await txt()).includes('inactive'));
+
+
+  // Session expires mid-work: edits are kept, user re-enters the password, save completes
+  await p.goto('about:blank'); await p.goto(BASE + '#alphaleaders'); await p.waitForSelector('[data-demo]');
+  await p.click('[data-demo]:has-text("Owner")'); await p.waitForSelector('.kpis');
+  srv.cache.clear(); // server forgets every session token
+  await p.click('#btn-add-lead'); await p.fill('#f-lead-name', 'Kept After Expiry'); await p.fill('#f-lead-phone', '0811222333'); await p.click('#modal-form button[type=submit]');
+  await p.waitForSelector('#f-reauth-pw', { timeout: 10000 });
+  ok('expired session asks for the password instead of throwing work away', (await txt()).includes('Session expired'));
+  await p.keyboard.press('Escape');
+  ok('re-auth dialog cannot be dismissed by accident', await p.isVisible('#f-reauth-pw'));
+  await p.fill('#f-reauth-pw', 'wrong'); await p.click('#modal-form button[type=submit]');
+  await p.waitForFunction(() => (document.querySelector('#reauth-err') || {}).textContent);
+  ok('wrong password keeps the dialog open with an error', await p.isVisible('#f-reauth-pw'));
+  await p.fill('#f-reauth-pw', 'demo'); await p.click('#modal-form button[type=submit]');
+  await p.waitForFunction(() => document.querySelector('#sync-text').textContent.includes('saved'), null, { timeout: 10000 });
+  const own2 = srv.post({ action: 'login', email: 'owner@alphaleaders.id', password: 'demo', slug: 'alphaleaders' });
+  ok('unsaved lead reaches the server after re-auth', srv.post({ action: 'list', token: own2.token, collection: 'ws/' + own2.session.wsId + '/leads' }).docs.some((d) => d.data.name === 'Kept After Expiry'));
+
+  // Server unreachable: no silent sign-out
+  const p3 = await ctx.newPage(); p3.on('pageerror', (e) => errs.push(e.message));
+  await p3.route(API, (route) => route.abort('internetdisconnected'));
+  await p3.goto(BASE + '#dashboard'); await p3.waitForSelector('#retry-boot', { timeout: 15000 });
+  ok('offline start shows "cannot reach the server" and keeps the sign-in', await p3.evaluate(() => !!localStorage.getItem('mcrm:token')));
+  await p3.unroute(API); await p3.click('#retry-boot'); await p3.waitForSelector('.kpis');
+  ok('"Try again" resumes the session when the server is back', true);
+  await p3.close();
 
   ok('no page errors', errs.length === 0);
   console.log(`\n${n} browser checks passed`);

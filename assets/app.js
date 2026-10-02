@@ -284,7 +284,11 @@
         }, (e) => { console.warn('listener', path, e); if (first) { first = false; ready(); } }));
       });
     });
-    B.create = async (d) => { await B.flush(d); wsIndex.push(Object.assign({ id: d.id }, metaFields(d))); };
+    B.create = async (d) => {
+      const ops = []; docsOf(d).forEach((obj, p) => ops.push({ p, j: JSON.stringify(obj) }));
+      await runOps(ops); // throws, so the console can tell the user it failed
+      wsIndex.push(Object.assign({ id: d.id }, metaFields(d)));
+    };
     B.saveMeta = async (id, meta) => {
       const cur = wsIndex.find((w) => w.id === id);
       const next = Object.assign({}, cur, meta);
@@ -341,31 +345,57 @@
         try { const r = await fetch(url, { method: 'POST', body, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow' }); res = await r.json(); break; }
         catch (e) { if (i < 2) { await sleep(800 * (i + 1)); continue; } setSync('error'); throw e; }
       }
-      if (res && !res.ok && res.error === 'auth' && action !== 'login' && action !== 'whoami' && B.session) {
-        LS.del(K_TOKEN); B.session = null; B.close();
-        toast(tr('Your session has ended. Please sign in again.', 'Sesi Anda berakhir. Silakan masuk lagi.'));
-        S = null; me = null; pme = null; boot();
-      }
+      if (res && !res.ok && res.error === 'auth' && action !== 'login' && action !== 'whoami' && action !== 'logout' && B.session) reauth();
       return res || { ok: false, error: 'server' };
     }
     B.call = call;
+    // Session expired mid-work: keep every unsaved edit, ask for the password again, then save.
+    let reauthing = false;
+    function reauth() {
+      if (reauthing) return; reauthing = true;
+      if (S && !S.preview) queue.set(S.id, S);
+      const ss = B.session; LS.del(K_TOKEN); B.close(); setSync('error');
+      const giveUp = () => { reauthing = false; delete $('#modal').dataset.locked; queue.clear(); B.session = null; S = null; me = null; pme = null; boot(); };
+      openModal(tr('Session expired', 'Sesi berakhir'), `
+        <p class="muted" style="margin:0 0 10px">${esc(tr('For your security, please enter your password again. Your unsaved changes are kept.', 'Demi keamanan, masukkan password lagi. Perubahan yang belum tersimpan tetap aman.'))}</p>
+        <label class="field"><span>Email</span><input value="${esc(ss.email || '')}" disabled></label>
+        <label class="field"><span>Password</span><input type="password" name="pw" id="f-reauth-pw" required autocomplete="current-password"></label>
+        <div class="err" id="reauth-err"></div>
+        <div class="modal-foot"><button type="button" class="btn" id="reauth-out">${esc(tr('Sign out', 'Keluar'))}</button><button type="submit" class="btn btn-primary">${esc(tr('Continue', 'Lanjut'))}</button></div>`, async (fd) => {
+        const slug = ss.kind === 'tenant' ? (wsIndex.find((w) => w.id === ss.wsId) || {}).slug || LS.get(K_TENANT) || '' : '';
+        let r; try { r = await B.login(ss.email, fd.get('pw'), slug); } catch (e) { r = { ok: false, error: 'network' }; }
+        if (!r.ok) { setTimeout(() => { const el = $('#reauth-err'); if (el) el.textContent = r.error === 'network' ? tr('Cannot reach the server.', 'Server tidak bisa dihubungi.') : serverError(r); }, 0); return false; }
+        reauthing = false; delete $('#modal').dataset.locked; startPoll(); toast(tr('Welcome back. Saving your changes…', 'Selamat datang kembali. Menyimpan perubahan…'));
+        if (queue.size) B.flush();
+      });
+      $('#modal').dataset.locked = '1';
+      const out = $('#reauth-out'); if (out) out.onclick = () => { closeModal(); giveUp(); };
+    }
     B.login = async (email, password, slug) => { const r = await call('login', { email, password, slug: slug || '' }); if (r.ok) { LS.set(K_TOKEN, r.token); B.session = r.session; } return r; };
     B.logout = async () => { try { await call('logout'); } catch (e) { /* ignore */ } LS.del(K_TOKEN); B.session = null; B.close(); };
     B.whoami = async () => {
       if (!LS.get(K_TOKEN)) return null;
-      try { const r = await call('whoami'); if (r.ok) { B.session = r.session; return r.session; } } catch (e) { /* offline */ }
-      LS.del(K_TOKEN); return null;
+      let r;
+      try { r = await call('whoami'); } catch (e) { B.offline = true; return null; } // keep the token: the server may just be unreachable
+      if (r.ok) { B.offline = false; B.session = r.session; return r.session; }
+      if (r.error === 'auth') LS.del(K_TOKEN); else B.offline = true;
+      return null;
     };
     B.brand = (slug) => call('brand', { slug });
     B.audit = (limit) => call('audit', { limit: limit || 200 });
-    const allowed = (p) => {
+    // Mirrors canWrite_ in server/Code.gs so the browser never sends a change the server will refuse.
+    const allowed = (p, del) => {
       const ss = B.session; if (!ss) return false;
-      if (ss.kind === 'platform') return true;
+      if (ss.kind === 'platform') return !del || ss.role === 'owner' || !/^ws\/[^/]+$/.test(p);
       const base = 'ws/' + ss.wsId;
-      if (p === base) return ss.role === 'superadmin' || ss.role === 'admin';
-      if (ss.role === 'client') return p.indexOf(base + '/sessions/') === 0;
-      return p.indexOf(base + '/') === 0;
+      const admin = ss.role === 'superadmin' || ss.role === 'admin';
+      if (p === base) return admin && !del;
+      if (p.indexOf(base + '/') !== 0) return false;
+      if (del) return admin || (p.indexOf(base + '/sessions/') === 0 && ss.role !== 'client' && ss.role !== 'bd');
+      if (ss.role === 'client') return shadow.has(p) && p.indexOf(base + '/sessions/') === 0;
+      return true;
     };
+    const restricted = (j) => j && j.indexOf('"restricted":true') >= 0;
     function docsOf(d) {
       const m = new Map();
       m.set('ws/' + d.id, metaFields(d));
@@ -377,9 +407,10 @@
         const chunk = ops.slice(i, i + 200);
         const r = await call('batch', { ops: chunk.map((o) => (o.del ? { op: 'del', path: o.p } : { op: 'set', path: o.p, data: JSON.parse(o.j) })) });
         if (!r.ok) {
+          B.lastError = r.error || 'server';
           if (r.error === 'forbidden') toast(tr('You do not have permission for that change.', 'Anda tidak punya izin untuk perubahan itu.'));
           else if (r.error !== 'auth') { toast(tr('Could not save. Check your connection and try again.', 'Gagal menyimpan. Cek koneksi lalu coba lagi.')); setSync('error'); }
-          throw new Error(r.error || 'save');
+          const err = new Error(r.error || 'save'); err.code = B.lastError; throw err;
         }
         chunk.forEach((o) => { if (o.del) shadow.delete(o.p); else shadow.set(o.p, o.j); });
       }
@@ -397,14 +428,33 @@
           sets.forEach((d) => {
             const want = docsOf(d);
             const prefix = 'ws/' + d.id;
-            want.forEach((obj, p) => { if (!allowed(p)) return; const j = JSON.stringify(obj); if (shadow.get(p) !== j) ops.push({ p, j }); });
-            shadow.forEach((_, p) => { if (p.startsWith(prefix + '/') && !want.has(p) && allowed(p)) ops.push({ p, del: true }); });
+            want.forEach((obj, p) => {
+              if (!allowed(p)) return;
+              const j = JSON.stringify(obj);
+              if (shadow.get(p) === j || (restricted(j) && shadow.has(p))) return; // numbers-only records are read-only
+              ops.push({ p, j });
+            });
+            shadow.forEach((j, p) => { if (p.startsWith(prefix + '/') && !want.has(p) && !restricted(j) && allowed(p, true)) ops.push({ p, del: true }); });
           });
           if (ops.length) await sendOps(ops);
         } while (dirty || queue.size);
-      })().then(() => setSync('cloud')).catch(() => {}).finally(() => { flushing = null; });
+      })().then(() => { B.lastError = null; clearTimeout(retryT); setSync('cloud'); }).catch((e) => {
+        const code = (e && e.code) || 'network';
+        if (code === 'auth') return; // reauth() keeps the edits and flushes after sign-in
+        if (code === 'forbidden') { resync(); return; } // server is the source of truth: reload what we may see
+        if (S && !S.preview) queue.set(S.id, S); // keep the edit and retry
+        setSync('error'); clearTimeout(retryT); retryT = setTimeout(() => { if (queue.size && !flushing) B.flush(); }, 10000);
+      }).finally(() => { flushing = null; });
       return flushing;
     };
+    let retryT = null;
+    async function resync() {
+      queue.clear();
+      if (!S || S.preview) return;
+      const fresh = await B.open(S.id);
+      if (fresh && S && S.id === fresh.id) { Object.assign(S, fresh); migrate(S); if (me && !me.platform) me = S.accounts.find((a) => a.id === me.id && a.active !== false) || me; scheduleRender(); }
+      setSync('cloud');
+    }
     B.idle = () => flushing || Promise.resolve();
     B.save = () => { B.flush(); };
     B.list = async () => {
@@ -428,7 +478,12 @@
       startPoll();
       return data;
     };
-    B.create = async (d) => { await B.flush(d); wsIndex.push(Object.assign({ id: d.id }, metaFields(d))); };
+    B.create = async (d) => {
+      B.lastError = null;
+      const ops = []; docsOf(d).forEach((obj, p) => ops.push({ p, j: JSON.stringify(obj) }));
+      await sendOps(ops); // throws with .code so the console can explain what went wrong
+      wsIndex.push(Object.assign({ id: d.id }, metaFields(d)));
+    };
     B.saveMeta = async (id, meta) => {
       const cur = wsIndex.find((w) => w.id === id);
       const body = metaFields(Object.assign({}, cur, meta));
@@ -1168,7 +1223,11 @@
       setPassword(owner, v.ownerPw);
       if (!v.demo) { d.accounts = [owner]; d.config.demoLogin = false; }
       showLoading(tr('Creating company…', 'Membuat company…'));
-      await Backend.create(d);
+      try { await Backend.create(d); } catch (e) {
+        renderConsole();
+        toast((e && e.code) === 'forbidden' ? tr('You do not have permission to create companies.', 'Anda tidak punya izin membuat company.') : tr('Could not create the company. Check your connection and try again.', 'Company gagal dibuat. Cek koneksi lalu coba lagi.'));
+        return;
+      }
       consoleStats[d.id] = { leads: d.leads, sessions: d.sessions, clients: d.clients };
       renderConsole();
       toast(tr(`${d.name} created. Login code: #${sl}`, `${d.name} dibuat. Kode login: #${sl}`));
@@ -2305,11 +2364,11 @@
       if (res === false) { $('#modal').classList.add('open'); modalSubmit = fn; }
     });
     document.addEventListener('click', (e) => {
-      if (e.target.closest('[data-close-modal]')) closeModal();
+      if (e.target.closest('[data-close-modal]') && !$('#modal').dataset.locked) closeModal();
       if (e.target.closest('[data-close-drawer]')) closeDrawer();
     });
-    $('#modal').addEventListener('mousedown', (e) => { if (e.target.id === 'modal') closeModal(); });
-    document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if ($('#modal').classList.contains('open')) closeModal(); else closeDrawer(); });
+    $('#modal').addEventListener('mousedown', (e) => { if (e.target.id === 'modal' && !$('#modal').dataset.locked) closeModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if ($('#modal').classList.contains('open')) { if (!$('#modal').dataset.locked) closeModal(); } else closeDrawer(); });
     window.addEventListener('hashchange', () => {
       const tok = location.hash.slice(1).toLowerCase();
       if (Backend && Backend.serverAuth) {
@@ -2338,7 +2397,9 @@
     const isRoute = !tok || ROUTES.includes(tok);
     if (tok === 'lightech' || tok === 'console') LS.del(K_TENANT);
     else if (!isRoute) LS.set(K_TENANT, tok);
-    const sess = await Backend.whoami();
+    let sess = null;
+    try { sess = await Backend.whoami(); } catch (e) { Backend.offline = true; }
+    if (!sess && Backend.offline) { renderOffline(); return; }
     const wantSlug = LS.get(K_TENANT);
     if (sess && sess.kind === 'platform' && (isRoute || tok === 'lightech' || tok === 'console')) {
       platform = (await Backend.getPlatform()) || { admins: [] };
@@ -2360,7 +2421,7 @@
       }
     }
     if (wantSlug) {
-      const b = await Backend.brand(wantSlug);
+      let b; try { b = await Backend.brand(wantSlug); } catch (e) { renderOffline(); return; }
       if (b.ok) {
         S = { id: b.id, slug: b.slug, status: b.status, name: b.name, config: b.config, accounts: b.chips || [], programs: [], leads: [], sessions: [], clients: [], preview: true };
         me = null; applyBrand(); renderTenantLogin();
@@ -2369,6 +2430,14 @@
       LS.del(K_TENANT);
     }
     renderNeutralLogin();
+  }
+  function renderOffline() {
+    showGate(`<div class="gate-card">
+      <div class="gate-title">${tr('Cannot reach the server', 'Server tidak bisa dihubungi')}</div>
+      <p class="muted small" style="margin:0">${tr('Check your internet connection. You stay signed in; nothing was lost.', 'Cek koneksi internet Anda. Anda tetap masuk; tidak ada data yang hilang.')}</p>
+      <button class="btn btn-primary" id="retry-boot" type="button" style="justify-content:center;padding:10px">${tr('Try again', 'Coba lagi')}</button>
+    </div>`);
+    $('#retry-boot').onclick = () => { Backend.offline = false; showLoading(); bootServer(); };
   }
   const serverError = (r) => ({
     invalid: tr('Wrong email or password.', 'Email atau password salah.'),

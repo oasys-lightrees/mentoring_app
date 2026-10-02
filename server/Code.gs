@@ -41,6 +41,7 @@ function doGet() { return out_({ ok: true, service: 'lightrees-mentoring-crm', v
 
 function handle_(req) {
   const a = String(req.action || '');
+  const t0 = Date.now() - 5000; // overlap window: rows written while we read are re-sent next poll (clients de-duplicate)
   if (a === 'ping') return { ok: true, version: VERSION };
   if (a === 'brand') return brand_(req);
   if (a === 'login') return login_(req);
@@ -49,10 +50,10 @@ function handle_(req) {
   switch (a) {
     case 'whoami': return { ok: true, session: publicSession_(sess) };
     case 'logout': cache_().remove('tok:' + req.token); return { ok: true };
-    case 'list': return list_(sess, req.collection);
+    case 'list': return list_(sess, req.collection, t0);
     case 'get': return get_(sess, req.path);
     case 'batch': return batch_(sess, req.ops || []);
-    case 'changes': return changes_(sess, Number(req.since) || 0);
+    case 'changes': return changes_(sess, Number(req.since) || 0, t0);
     case 'audit': return auditList_(sess, Number(req.limit) || 200);
   }
   return { ok: false, error: 'invalid', message: 'Unknown action' };
@@ -162,28 +163,78 @@ function brand_(req) {
 }
 
 // ───────────────────────────────────────────────────────── authorization
-function canRead_(s, path) {
+// Least privilege: every record is either fully visible, visible as numbers only (leaderboard / funnel), or hidden.
+const FULL_ROLES_ = ['superadmin', 'admin', 'senior'];
+function inCompany_(s, path) {
   if (s.kind === 'platform') return true;
   const base = 'ws/' + s.wsId;
   return path === base || path.indexOf(base + '/') === 0;
 }
+// Per-request visibility for limited roles (bd, mentor, assistant, client). null = sees everything in the company.
+function scope_(s) {
+  if (s.kind === 'platform' || FULL_ROLES_.indexOf(s.role) >= 0) return null;
+  if (s._scope) return s._scope;
+  const base = 'ws/' + s.wsId;
+  const meta = data_(s.store, base) || {};
+  const me = (meta.accounts || []).filter(function (a) { return a.id === s.accountId; })[0] || {};
+  const leads = {}, sessions = {}, clients = {};
+  s.store.rows.forEach(function (r) {
+    if (r.deleted) return;
+    if (r.parent === base + '/leads') leads[r.path] = JSON.parse(r.json);
+    else if (r.parent === base + '/sessions') sessions[r.path] = JSON.parse(r.json);
+    else if (r.parent === base + '/clients') clients[r.path] = JSON.parse(r.json);
+  });
+  const sc = { full: {}, numbers: {}, me: me };
+  const leadFull = {};
+  const each = function (o, fn) { Object.keys(o).forEach(function (k) { fn(k, o[k]); }); };
+  if (s.role === 'client') {
+    const c = clients[base + '/clients/' + me.clientId];
+    if (c) { sc.full[base + '/clients/' + me.clientId] = 1; leadFull[c.leadId] = 1; }
+    each(sessions, function (p, x) { if (leadFull[x.leadId]) sc.full[p] = 1; });
+    each(leads, function (p, x) { if (leadFull[x.id]) sc.full[p] = 1; });
+    return (s._scope = sc);
+  }
+  if (s.role === 'bd') {
+    each(leads, function (p, x) { if (x.ownerId === s.accountId) leadFull[x.id] = 1; });
+    each(sessions, function (p, x) { if (leadFull[x.leadId]) sc.full[p] = 1; });
+    each(clients, function (p, x) { if (leadFull[x.leadId]) sc.full[p] = 1; });
+  } else if (s.role === 'mentor' || s.role === 'assistant') {
+    const coach = s.role === 'assistant' ? me.mentorId : s.accountId;
+    if (s.role === 'assistant') each(leads, function (p, x) { leadFull[x.id] = 1; }); // assistants manage all leads
+    each(sessions, function (p, x) { if (x.mentorId === coach || x.assistantId === s.accountId) { sc.full[p] = 1; leadFull[x.leadId] = 1; } });
+    each(clients, function (p, x) { if (x.coachId === coach || x.assistantId === s.accountId) { sc.full[p] = 1; leadFull[x.leadId] = 1; } });
+  }
+  each(leads, function (p, x) { if (leadFull[x.id]) sc.full[p] = 1; else sc.numbers[p] = 1; });
+  return (s._scope = sc);
+}
+function visibility_(s, path) {
+  if (!inCompany_(s, path)) return 'none';
+  if (path === 'platform/main') return s.kind === 'platform' ? 'full' : 'none';
+  const sc = scope_(s);
+  if (!sc || /^ws\/[^/]+$/.test(path)) return 'full';
+  if (sc.full[path]) return 'full';
+  if (sc.numbers[path]) return 'numbers';
+  return 'none';
+}
+function canRead_(s, path) { return visibility_(s, path) !== 'none'; }
 function canWrite_(s, op, path) {
-  if (s.kind === 'platform') return true;
-  if (!canRead_(s, path)) return false;
+  if (s.kind === 'platform') return op === 'set' || s.role === 'owner' || !/^ws\/[^/]+$/.test(path); // only the Super Admin deletes companies
+  if (!inCompany_(s, path)) return false;
   const base = 'ws/' + s.wsId;
   const admin = s.role === 'superadmin' || s.role === 'admin';
-  if (path === base) return admin && op === 'set';               // company config & accounts: owner/admin only, never delete the company
-  if (op === 'del') return admin || path.indexOf(base + '/sessions/') === 0 && s.role !== 'client';
-  if (s.role === 'client') return path.indexOf(base + '/sessions/') === 0; // clients only tick their own action items
+  if (path === base) return admin && op === 'set';
+  const exists = !!data_(s.store, path);
+  if (exists && scope_(s) && visibility_(s, path) !== 'full') return false; // cannot change records you cannot fully see
+  if (op === 'del') return admin || (path.indexOf(base + '/sessions/') === 0 && s.role !== 'client' && s.role !== 'bd');
+  if (s.role === 'client') return exists && path.indexOf(base + '/sessions/') === 0; // clients only tick action items on their own sessions
   return true;
 }
 
 // ───────────────────────────────────────────────────────── data actions
-function list_(s, collection) {
+function list_(s, collection, t0) {
   collection = String(collection || '');
-  const store = s.store;
-  const rows = store.rows.filter(function (r) { return r.parent === collection && !r.deleted && canRead_(s, r.path); });
-  return { ok: true, now: Date.now(), docs: rows.map(function (r) { return { id: r.path.split('/').pop(), data: redact_(s, r.path, JSON.parse(r.json)) }; }) };
+  const rows = s.store.rows.filter(function (r) { return r.parent === collection && !r.deleted && canRead_(s, r.path); });
+  return { ok: true, now: t0, docs: rows.map(function (r) { return { id: r.path.split('/').pop(), data: redact_(s, r.path, JSON.parse(r.json)) }; }) };
 }
 function get_(s, path) {
   path = String(path || '');
@@ -196,6 +247,8 @@ function batch_(s, ops) {
   for (let i = 0; i < ops.length; i++) {
     const o = ops[i];
     if (!o || !/^[A-Za-z0-9_\-.~:@+]+(\/[A-Za-z0-9_\-.~:@+]+)+$/.test(o.path || '') || (o.op !== 'set' && o.op !== 'del')) return { ok: false, error: 'invalid', message: 'Bad operation at #' + i };
+    if (o.op === 'set' && (!o.data || typeof o.data !== 'object' || Array.isArray(o.data))) return { ok: false, error: 'invalid', message: 'Missing data at #' + i };
+    if (o.path.split('/').length % 2) return { ok: false, error: 'invalid', message: 'Not a record path at #' + i };
     if (!canWrite_(s, o.op, o.path)) return { ok: false, error: 'forbidden', message: 'No permission to change ' + o.path };
   }
   const lock = LockService.getScriptLock();
@@ -205,23 +258,26 @@ function batch_(s, ops) {
     const actor = s.email + (s.kind === 'platform' ? ' (Lightech)' : '');
     const merged = ops.map(function (o) {
       if (o.op !== 'set') return o;
-      const d = keepSecrets_(store, o.path, o.data);
+      let d = keepSecrets_(store, o.path, o.data);
+      const old = data_(store, o.path);
       if (s.kind !== 'platform' && /^ws\/[^/]+$/.test(o.path)) { // login code & status are governed by Lightech only
-        const old = data_(store, o.path) || {};
-        d.slug = old.slug; d.status = old.status || 'active';
+        d.slug = (old || {}).slug; d.status = (old || {}).status || 'active';
+        if (s.role !== 'superadmin') d.accounts = protectAccounts_(old && old.accounts, d.accounts, 'superadmin', s.accountId);
       }
+      if (s.kind === 'platform' && o.path === 'platform/main' && s.role !== 'owner' && old) d = selfOnly_(old, d, s.adminId);
       return { op: 'set', path: o.path, data: d };
     });
     const ts = writeDocs_(store, merged, actor);
-    ops.forEach(function (o) { audit_(actor, companyOf_(o.path), o.op === 'del' ? 'delete' : 'save', o.path, summary_(o)); });
+    auditMany_(ops.map(function (o) { return [new Date(), actor, companyOf_(o.path), o.op === 'del' ? 'delete' : 'save', o.path, summary_(o)]; }));
     return { ok: true, now: ts };
   } finally { lock.releaseLock(); }
 }
-function changes_(s, since) {
-  const rows = s.store.rows.filter(function (r) { return r.updatedAt > since && canRead_(s, r.path); });
+function changes_(s, since, t0) {
+  // Rows that became invisible (deleted or out of scope) are reported as deleted so clients drop them.
+  const rows = s.store.rows.filter(function (r) { return r.updatedAt > since && inCompany_(s, r.path); });
   return {
-    ok: true, now: Date.now(),
-    docs: rows.map(function (r) { return r.deleted ? { path: r.path, deleted: true } : { path: r.path, data: redact_(s, r.path, JSON.parse(r.json)) }; })
+    ok: true, now: t0,
+    docs: rows.map(function (r) { return r.deleted || !canRead_(s, r.path) ? { path: r.path, deleted: true } : { path: r.path, data: redact_(s, r.path, JSON.parse(r.json)) }; })
   };
 }
 function auditList_(s, limit) {
@@ -246,6 +302,13 @@ function redact_(s, path, d) {
     const key = path === 'platform/main' ? 'admins' : 'accounts';
     d = JSON.parse(JSON.stringify(d));
     (d[key] || []).forEach(function (a) { a.defaultPw = !!a.pw && checkPassword_(a, 'demo'); delete a.pw; delete a.salt; });
+    if (s.role === 'client' && s.kind === 'tenant') d[key] = (d[key] || []).map(function (a) { return a.id === s.accountId ? a : { id: a.id, name: a.name, role: a.role, mentorId: a.mentorId || '', active: a.active }; });
+    return d;
+  }
+  if (visibility_(s, path) === 'numbers') { // leaderboard & funnel only: no names, phones, emails or notes
+    return { id: d.id, ownerId: d.ownerId, stageId: d.stageId, value: d.value, source: d.source, programId: d.programId,
+      createdAt: d.createdAt, updatedAt: d.updatedAt, wonAt: d.wonAt, lostAt: d.lostAt, lostReason: d.lostReason,
+      history: (d.history || []).map(function (h) { return { at: h.at, from: h.from, to: h.to }; }), restricted: true };
   }
   return d;
 }
@@ -261,6 +324,40 @@ function keepSecrets_(store, path, d) {
     if (!a.pw && byId[a.id]) { a.pw = byId[a.id].pw; a.salt = byId[a.id].salt; }
   });
   return d;
+}
+
+// A company admin cannot touch Owner accounts or create new Owners; only the Owner can.
+function protectAccounts_(oldList, newList, protectedRole, selfId) {
+  oldList = oldList || []; newList = newList || [];
+  const oldById = {};
+  oldList.forEach(function (a) { oldById[a.id] = a; });
+  const out = [];
+  newList.forEach(function (a) {
+    const prev = oldById[a.id];
+    if (prev && prev.role === protectedRole) { out.push(prev); return; }            // owner records stay exactly as they were
+    if (a.role === protectedRole) { if (prev) { a.role = prev.role; } else return; } // no promotion to owner
+    out.push(a);
+  });
+  oldList.forEach(function (a) { if (a.role === protectedRole && !out.some(function (x) { return x.id === a.id; })) out.push(a); }); // owners cannot be removed
+  return out;
+}
+// A Lightech Admin (not Super Admin) may only change their own name, email and password.
+function selfOnly_(old, d, selfId) {
+  const next = JSON.parse(JSON.stringify(old));
+  const mine = (d.admins || []).filter(function (a) { return a.id === selfId; })[0];
+  next.admins = (next.admins || []).map(function (a) {
+    if (a.id !== selfId || !mine) return a;
+    const r = JSON.parse(JSON.stringify(a));
+    r.name = mine.name; r.email = mine.email;
+    if (mine.pw) { r.pw = mine.pw; r.salt = mine.salt; }
+    return r;
+  });
+  return next;
+}
+function auditMany_(rows) {
+  const sh = book_().getSheetByName('audit');
+  if (!sh || !rows.length) return;
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 6).setValues(rows);
 }
 
 // ───────────────────────────────────────────────────────── storage helpers

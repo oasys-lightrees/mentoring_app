@@ -71,6 +71,79 @@ const CL = srv.post({ action: 'login', email: 'client@al.id', password: 'demo', 
 r = srv.post({ action: 'batch', token: CL, ops: [{ op: 'set', path: 'ws/A/leads/L3', data: { id: 'L3' } }] });
 assert.strictEqual(r.error, 'forbidden'); ok('client portal cannot create leads');
 
+// Least privilege inside a company: every role only sees what its job needs
+const meta2 = srv.post({ action: 'get', token: A, path: 'ws/A' }).data;
+meta2.accounts.push(acc('a-adm', 'adm@al.id', 'admin', 'demo'), acc('a-m', 'mentor@al.id', 'mentor', 'demo'));
+meta2.accounts.find((a) => a.id === 'a-cl').clientId = 'C1';
+r = srv.post({ action: 'batch', token: A, ops: [
+  { op: 'set', path: 'ws/A', data: meta2 },
+  { op: 'set', path: 'ws/A/leads/L4', data: { id: 'L4', name: 'Own BD lead', phone: '0811', ownerId: 'a-bd', stageId: 's1', value: 5 } },
+  { op: 'set', path: 'ws/A/leads/L5', data: { id: 'L5', name: 'Rina Client', phone: '0822', email: 'rina@x.id', notes: 'private', ownerId: 'a-owner', stageId: 'won', value: 50 } },
+  { op: 'set', path: 'ws/A/clients/C1', data: { id: 'C1', leadId: 'L5', coachId: 'a-m' } },
+  { op: 'set', path: 'ws/A/sessions/S1', data: { id: 'S1', leadId: 'L5', mentorId: 'a-m', actions: [] } },
+  { op: 'set', path: 'ws/A/sessions/S2', data: { id: 'S2', leadId: 'L1', mentorId: 'someone-else' } }
+] });
+assert.ok(r.ok); ok('owner adds team members, clients and sessions');
+const docsById = (res) => Object.fromEntries(res.docs.map((d) => [d.id, d.data]));
+let L = docsById(srv.post({ action: 'list', token: BD, collection: 'ws/A/leads' }));
+assert.ok(L.L4.name === 'Own BD lead' && !L.L4.restricted); ok('BD sees own leads in full');
+assert.ok(L.L5.restricted && !L.L5.name && !L.L5.phone && !L.L5.email && !L.L5.notes && L.L5.value === 50); ok('BD sees other leads as numbers only (leaderboard), no names/phones/notes');
+assert.strictEqual(srv.post({ action: 'batch', token: BD, ops: [{ op: 'set', path: 'ws/A/leads/L5', data: { id: 'L5', name: 'x' } }] }).error, 'forbidden'); ok('BD cannot overwrite a lead it only sees as numbers');
+assert.strictEqual(srv.post({ action: 'list', token: BD, collection: 'ws/A/sessions' }).docs.length, 0); ok('BD does not see sessions of other people\'s leads');
+assert.strictEqual(srv.post({ action: 'get', token: BD, path: 'ws/A/clients/C1' }).error, 'forbidden'); ok('BD cannot open another person\'s client');
+const CL2 = srv.post({ action: 'login', email: 'client@al.id', password: 'demo', slug: 'alphaleaders' }).token;
+L = docsById(srv.post({ action: 'list', token: CL2, collection: 'ws/A/leads' }));
+assert.deepStrictEqual(Object.keys(L), ['L5']); ok('client portal sees only their own record');
+assert.deepStrictEqual(srv.post({ action: 'list', token: CL2, collection: 'ws/A/sessions' }).docs.map((d) => d.id), ['S1']); ok('client sees only their own sessions');
+const accView = srv.post({ action: 'get', token: CL2, path: 'ws/A' }).data.accounts;
+assert.ok(accView.every((a) => a.id === 'a-cl' || !a.email)); ok('client cannot see team emails');
+assert.ok(srv.post({ action: 'batch', token: CL2, ops: [{ op: 'set', path: 'ws/A/sessions/S1', data: { id: 'S1', leadId: 'L5', mentorId: 'a-m', actions: [{ t: 'Read book', done: true }] } }] }).ok); ok('client ticks action items on own session');
+assert.strictEqual(srv.post({ action: 'batch', token: CL2, ops: [{ op: 'set', path: 'ws/A/sessions/S9', data: { id: 'S9' } }] }).error, 'forbidden'); ok('client cannot create sessions');
+assert.strictEqual(srv.post({ action: 'batch', token: CL2, ops: [{ op: 'del', path: 'ws/A/sessions/S1' }] }).error, 'forbidden'); ok('client cannot delete sessions');
+const M = srv.post({ action: 'login', email: 'mentor@al.id', password: 'demo', slug: 'alphaleaders' }).token;
+assert.deepStrictEqual(srv.post({ action: 'list', token: M, collection: 'ws/A/sessions' }).docs.map((d) => d.id), ['S1']); ok('mentor sees only own sessions');
+L = docsById(srv.post({ action: 'list', token: M, collection: 'ws/A/leads' }));
+assert.ok(L.L5.name === 'Rina Client' && L.L4.restricted); ok('mentor sees own clients in full, other leads as numbers');
+assert.strictEqual(srv.post({ action: 'batch', token: M, ops: [{ op: 'del', path: 'ws/A/sessions/S2' }] }).error, 'forbidden'); ok('mentor cannot delete another coach\'s session');
+assert.ok(srv.post({ action: 'batch', token: M, ops: [{ op: 'set', path: 'ws/A/sessions/S3', data: { id: 'S3', leadId: 'L5', mentorId: 'a-m' } }] }).ok); ok('mentor books a session');
+const ch = srv.post({ action: 'changes', token: BD, since: 0 });
+assert.ok(!JSON.stringify(ch).includes('Rina') && ch.docs.some((d) => d.path === 'ws/A/sessions/S1' && d.deleted)); ok('change feed hides out-of-scope records from BD');
+
+// Company admin cannot touch the Owner
+const ADM = srv.post({ action: 'login', email: 'adm@al.id', password: 'demo', slug: 'alphaleaders' }).token;
+const m3 = srv.post({ action: 'get', token: ADM, path: 'ws/A' }).data;
+m3.accounts.find((a) => a.id === 'a-owner').email = 'attacker@evil.id';
+m3.accounts.push(acc('a-evil', 'evil@al.id', 'superadmin', 'x'));
+m3.accounts.find((a) => a.id === 'a-bd').role = 'superadmin';
+assert.ok(srv.post({ action: 'batch', token: ADM, ops: [{ op: 'set', path: 'ws/A', data: m3 }] }).ok);
+const accs = srv.post({ action: 'get', token: A, path: 'ws/A' }).data.accounts;
+assert.ok(accs.find((a) => a.id === 'a-owner').email === 'owner@al.id'); ok('admin cannot change the Owner account');
+assert.ok(!accs.find((a) => a.id === 'a-evil') && accs.find((a) => a.id === 'a-bd').role === 'bd'); ok('admin cannot create or promote Owners');
+const m4 = srv.post({ action: 'get', token: ADM, path: 'ws/A' }).data; m4.accounts = m4.accounts.filter((a) => a.id !== 'a-owner');
+srv.post({ action: 'batch', token: ADM, ops: [{ op: 'set', path: 'ws/A', data: m4 }] });
+assert.ok(srv.post({ action: 'get', token: A, path: 'ws/A' }).data.accounts.some((a) => a.id === 'a-owner')); ok('admin cannot remove the Owner');
+assert.strictEqual(srv.post({ action: 'batch', token: ADM, ops: [{ op: 'del', path: 'ws/A' }] }).error, 'forbidden'); ok('nobody inside a company can delete the company');
+
+// Input validation & sync safety
+assert.strictEqual(srv.post({ action: 'batch', token: A, ops: [{ op: 'set', path: 'ws/A/leads/L7' }] }).error, 'invalid'); ok('a save without data is rejected');
+assert.strictEqual(srv.post({ action: 'batch', token: A, ops: [{ op: 'set', path: 'ws/A/leads', data: {} }] }).error, 'invalid'); ok('collection paths cannot be overwritten');
+r = srv.post({ action: 'list', token: A, collection: 'ws/A/leads' });
+assert.ok(r.now <= Date.now() - 4000); ok('sync cursor overlaps by 5 s so concurrent saves are never missed');
+
+// Lightech Admin vs Super Admin
+const plat = srv.post({ action: 'get', token: P, path: 'platform/main' }).data;
+plat.admins.push(acc('lt-2', 'ops@lightech.co.id', 'admin', 'opspass'));
+assert.ok(srv.post({ action: 'batch', token: P, ops: [{ op: 'set', path: 'platform/main', data: plat }] }).ok);
+const OPS = srv.post({ action: 'login', email: 'ops@lightech.co.id', password: 'opspass' }).token;
+assert.ok(OPS); ok('Super Admin adds a Lightech Admin');
+assert.strictEqual(srv.post({ action: 'batch', token: OPS, ops: [{ op: 'del', path: 'ws/B' }] }).error, 'forbidden'); ok('Lightech Admin cannot delete a company');
+const p2 = srv.post({ action: 'get', token: OPS, path: 'platform/main' }).data;
+p2.admins.find((a) => a.id === 'lt-owner').email = 'hijack@x.id'; p2.admins.find((a) => a.id === 'lt-2').name = 'Ops Team';
+p2.admins.push(acc('lt-3', 'new@x.id', 'owner', 'x'));
+assert.ok(srv.post({ action: 'batch', token: OPS, ops: [{ op: 'set', path: 'platform/main', data: p2 }] }).ok);
+const p3 = srv.post({ action: 'get', token: P, path: 'platform/main' }).data.admins;
+assert.ok(p3.find((a) => a.id === 'lt-owner').email === 'super@lightech.co.id' && !p3.find((a) => a.id === 'lt-3') && p3.find((a) => a.id === 'lt-2').name === 'Ops Team'); ok('Lightech Admin can only edit their own profile');
+
 // Suspend → sign-in blocked and live session ends
 const metaNow = srv.post({ action: 'get', token: P, path: 'ws/A' }).data; metaNow.status = 'suspended';
 assert.ok(srv.post({ action: 'batch', token: P, ops: [{ op: 'set', path: 'ws/A', data: metaNow }] }).ok);
