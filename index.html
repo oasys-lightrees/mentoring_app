@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -25,15 +25,17 @@
         </div>
       </div>
       <div class="topbar-actions">
-        <span class="sync local" id="sync" title="Status penyimpanan data"><span class="dot"></span><span id="sync-text">Lokal</span></span>
-        <select class="bar-select" id="ws-select" aria-label="Ganti workspace / brand"></select>
+        <span class="sync local" id="sync"><span class="dot"></span><span id="sync-text"></span></span>
+        <button class="btn btn-bar" id="console-back" type="button" hidden></button>
         <button class="btn btn-gold" id="btn-add-lead" type="button">+ <span id="btn-add-lead-label">Lead</span></button>
         <button class="btn btn-bar" id="btn-add-session" type="button">+ <span id="btn-add-session-label">Session</span></button>
         <div class="me-chip" id="me-chip"></div>
+        <div class="lang-seg" id="lang-bar" role="group" aria-label="Language"></div>
       </div>
     </div>
-    <nav class="tabs" id="tabs" aria-label="Menu utama"></nav>
+    <nav class="tabs" id="tabs" aria-label="Main menu"></nav>
   </header>
+  <div class="imp-banner" id="imp-banner" hidden></div>
 
   <main id="view" class="container"></main>
 </div>

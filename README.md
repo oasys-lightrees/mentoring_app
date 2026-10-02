@@ -1,68 +1,56 @@
 # Lightrees Mentoring CRM
 
-Satu sistem **Lead → Deal → Client** untuk bisnis coaching, mentoring, training & consulting. Satu aplikasi bisa dipakai banyak brand (**AlphaLeaders**, **PIWA**, **iPlus Leader**, dst). Semua label, funnel dan master data bisa diatur tanpa coding.
+White-label **Lead → Deal → Client** CRM for coaching, mentoring, training and consulting companies.
+Each company (AlphaLeaders, PIWA, iPlus, …) gets its own branded app; Lightech manages all of them from one console. UI in **English / Bahasa Indonesia** (toggle top-right).
 
-> **v0.3** = merge `mentoring_app` v0.1 (funnel CRM multi-brand) + `presensi/coaching.html` v0.2 (login, RBAC 5 peran, mentor↔asisten, client, action items).
+## How people sign in
 
-## Cara pakai
-
-| Mode | Cara buka | Data tersimpan di |
+| Who | Link | What they see |
 |---|---|---|
-| **Cloud (rekomendasi)** | [Link Claude Artifact](https://claude.ai/artifact/PDk86467k37K7Qs4wWPKoh) (privat, bagikan lewat menu Share) | Database online artifact, sinkron real-time untuk semua user yang punya akses link |
-| **Lokal** | Buka `index.html` di browser (atau `npx serve .`) | localStorage browser itu saja (pakai Backup JSON rutin) |
+| A company's team (e.g. AlphaLeaders) | app link + `#alphaleaders` | Only their brand: logo, colours, terminology, data. No other company is ever shown. |
+| Lightech admins | app link (no code) or `#lightech` → sign in with a Lightech account | **Lightech Console**: every company, stats, create / edit / suspend companies, open any company as Owner. |
 
-Aplikasinya mendeteksi sendiri mode mana yang dipakai. Indikator di header: **Cloud · tersimpan** atau **Tersimpan di browser ini**.
+Cloud app: [Claude Artifact](https://claude.ai/artifact/PDk86467k37K7Qs4wWPKoh) · AlphaLeaders: `…/PDk86467k37K7Qs4wWPKoh#alphaleaders`
 
-**Login demo:** semua akun awal memakai password `demo`, dan di layar login ada tombol 1 klik per peran. Matikan di **Settings → Brand → Login demo** sebelum go-live, lalu ganti password lewat **Tim & Akses**.
+**Demo credentials** (password `demo` everywhere — change before go-live):
+- Lightech Super Admin: `super@lightech.co.id`
+- Company owners: `owner@alphaleaders.id`, `owner@piwa.id`, `owner@iplus.id` (plus one-click demo buttons per role on each company's sign-in page)
 
-## Fitur
+## Features
 
-| Modul | Isi |
+| Area | What it does |
 |---|---|
-| **Multi-workspace** | AlphaLeaders, PIWA dan iPlus dalam 1 app. Bisa ganti dari header, plus template untuk brand baru. |
-| **Label configurable** | Mentor → Coach / Teacher / PT / Consultant. Session → Class / Webinar / Workshop. Lead → Prospect, Client → Member. |
-| **Login + 7 peran** | Superadmin, Admin/PA/CS, Senior Mentor, Mentor, Ast. Mentor (terhubung ke mentornya), BD/Sales, Client. Menu & data otomatis menyesuaikan peran. |
-| **Lead & Pipeline** | Form lead (deteksi WA dobel), kanban drag & drop, Won wajib isi nilai deal, Lost wajib isi alasan, SLA "diam", next action + overdue. |
-| **Sessions** | Jenis sesi terhubung ke stage. Menjadwalkan sesi = lead otomatis naik stage. Ada catatan, action items, WA reminder 1 klik, dan asisten ikut otomatis. |
-| **Clients** | Deal Won otomatis jadi Client (program, coach, asisten, periode). Ada progress sesi, action items, countdown renewal, dan flag risiko churn. |
-| **Portal client** | Client login dan melihat progress program, jadwal & action plan miliknya. |
-| **Dashboard** | KPI, funnel conversion, daftar butuh aksi, leaderboard BD (SUKA), sesi mendatang, performa per sumber lead. |
-| **Data** | Backup/restore JSON, export CSV, hapus data contoh (go-live), workspace baru. |
+| **White-label tenants** | Per-company brand name, colour, tagline, terminology (Mentor → Coach/Teacher/PT/Consultant, Session → Class/Webinar/Workshop), funnel stages, session types, programs, sources. The company Owner configures it in **Settings**. |
+| **Lightech Console** | Company list with users, leads, deals won, revenue, active clients, last activity. Create company from a template (with or without example data), set login code, suspend (blocks sign-in), reset owner password, delete. Manage Lightech admins. "Open" a company as its Owner with a visible Lightech banner. |
+| **Roles inside a company** | Owner, Admin/PA/CS, Senior Mentor, Mentor, Asst. Mentor (linked to a mentor), BD/Sales, Client. Menus and data scoped per role. |
+| **Lead & pipeline** | Lead form (duplicate WhatsApp check), drag-and-drop kanban, Won requires deal value, Lost requires a reason, stage SLA "idle" flag, next action + overdue. |
+| **Sessions** | Types linked to funnel stages; booking a session moves the lead forward automatically. Notes, action items, one-click WhatsApp reminder, assistant auto-assigned. |
+| **Clients** | Deal Won creates a client with program, coach, assistant and period. Session progress, action items, renewal countdown, churn-risk flag. Client portal login. |
+| **Dashboard** | KPIs, funnel conversion, needs-action list, BD leaderboard (SUKA), upcoming sessions, performance by lead source. |
+| **Data** | Cloud (artifact database, real-time) or local browser storage. JSON backup/restore, CSV export, delete example data for go-live. |
 
-## Arsitektur
+## Project layout
 
 ```
-index.html                  shell UI (mode lokal)
-assets/presets.js           template workspace + matriks hak akses
-assets/app.js               backend (cloud/lokal), RBAC, semua view
-assets/app.css              design system Lightrees (navy/emas, Plus Jakarta Sans), light & dark
-scripts/build-artifact.mjs  build dist/artifact.html untuk Claude Artifact
+index.html                  app shell (local mode)
+assets/presets.js           company templates, roles, permission matrix, reserved login codes
+assets/app.js               storage backends, tenants, Lightech console, RBAC, all views, EN/ID strings
+assets/app.css              Lightrees design system (navy/gold, Plus Jakarta Sans), light & dark
+scripts/build-artifact.mjs  builds dist/artifact.html for the Claude Artifact
 ```
 
-**Model data per workspace:** `config` (labels, stages, sessionTypes, sources, lostReasons, waTemplate, demoLogin) · `accounts` · `programs` · `leads` (+history) · `sessions` (+actionItems) · `clients`.
+Cloud data model: `platform/main` (Lightech admins) · `ws/{id}` (company: name, slug, status, config, accounts, programs) · `ws/{id}/leads|sessions|clients/{doc}`.
 
-**Cloud:** `ws/{id}` (config + akun + program) · `ws/{id}/leads/*` · `ws/{id}/sessions/*` · `ws/{id}/clients/*`. Satu dokumen per record, sehingga edit dari banyak user tidak saling menimpa.
+Update the cloud app: `node scripts/build-artifact.mjs`, then republish `dist/artifact.html` with `assets/*` to the same artifact URL.
 
-**Update artifact:** `node scripts/build-artifact.mjs`, lalu publish ulang `dist/artifact.html` beserta `assets/*` ke URL artifact yang sama.
+## Known limits (pilot stage)
 
-## Batasan yang perlu diketahui
-
-- Login & RBAC adalah kontrol **tampilan**. Password di-hash (SHA-256 + salt), tapi pengecekan masih di sisi browser. Siapa yang bisa membuka link tetap diatur lewat **Share** di artifact. Untuk produksi skala besar, pindahkan auth ke backend (Supabase / Odoo).
-- Mode lokal tidak berbagi data antar device, jadi pakai mode cloud untuk tim.
-
-## Demo script (± 8 menit)
-
-1. **Login** pakai tombol *Superadmin*. Dashboard tampilkan KPI, funnel, dan daftar *Butuh aksi*.
-2. **+ Lead** diisi live (nama, WA, program); harga terisi otomatis.
-3. Di drawer lead, **Jadwalkan Session**. Lead otomatis pindah ke COV. Tunjukkan WA reminder.
-4. **Selesai** pada sesi, lalu *Lanjut → ABM*. Ulangi sampai **Deal Won**. Client otomatis terbentuk.
-5. Tab **Clients**: progress program, action items, renewal.
-6. **Keluar**, login sebagai *BD*: hanya lead miliknya yang terlihat. Login sebagai *Client*: portal.
-7. Ganti workspace ke **PIWA**: label, warna & funnel berubah. Satu engine untuk banyak brand.
+- **Isolation is enforced in the app UI, not on the server.** Everyone who can open the artifact link can technically read every company's records (including hashed passwords) through the browser. Fine for a demo / internal pilot; for real external companies, move to a backend with server-side tenant rules (Supabase RLS or Odoo).
+- On a Claude Artifact, only the owner's organization members (or people invited as Editor) can **save**; outside viewers are read-only. External company teams need the production deployment.
 
 ## Roadmap
 
-- **Automation**: n8n + WA API (reminder H-1, lead dari Meta Ads masuk otomatis, round-robin BD).
-- **AI**: ringkasan sesi otomatis (Claude API), lalu progress report untuk client.
-- **Performance**: komisi otomatis dari deal won (Self Compensation), KPI per coach.
-- **Backend production**: auth server-side, audit log, integrasi Odoo.
+1. **Production hosting**: own domain per company (`crm.alphaleaders.id`), Supabase auth + row-level security per tenant.
+2. **Automation**: WhatsApp API reminders (H-1), Meta Ads lead webhook, round-robin BD assignment (n8n).
+3. **AI**: automatic session summaries and client progress reports.
+4. **Billing for Lightech**: plan per company, usage dashboard in the console.
