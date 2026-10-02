@@ -27,19 +27,19 @@ const MODE = process.argv[2] || 'local';
   // 1. neutral
   await p.goto(BASE); await p.waitForSelector('#login-form');
   console.log('1 neutral has no brand list:', !(await txt()).includes('PIWA') && !(await txt()).includes('AlphaLeaders'));
-  await p.screenshot({ path: 'w-neutral.png' });
+  await p.screenshot({ path: require('os').tmpdir() + '/w-neutral.png' });
   // 2. tenant link
   await p.goto('about:blank'); await p.goto(BASE + '#alphaleaders'); await p.waitForSelector('#login-form');
   const t2 = await txt();
   console.log('2 AL login exclusive:', t2.includes('AlphaLeaders') && !t2.includes('PIWA') && !t2.includes('iPlus'));
-  await p.screenshot({ path: 'w-al-login.png' });
+  await p.screenshot({ path: require('os').tmpdir() + '/w-al-login.png' });
   await p.click('[data-demo]:has-text("Owner")'); await p.waitForSelector('.kpis');
   const t3 = await txt();
   console.log('3 AL app no other brands:', !t3.includes('PIWA') && !t3.includes('iPlus') && !(await p.$('#ws-select')));
-  await p.screenshot({ path: 'w-al-dash-en.png' });
+  await p.screenshot({ path: require('os').tmpdir() + '/w-al-dash-en.png' });
   await p.click('#lang-bar [data-lang=id]'); await p.waitForTimeout(150);
   console.log('4 lang ID:', (await txt()).includes('Butuh aksi'));
-  await p.screenshot({ path: 'w-al-dash-id.png' });
+  await p.screenshot({ path: require('os').tmpdir() + '/w-al-dash-id.png' });
   await p.click('#lang-bar [data-lang=en]');
   await p.goto(BASE + '#settings'); await p.waitForSelector('#set-brand');
   await p.fill('#set-brand', 'AlphaLeaders Pro'); await p.press('#set-brand', 'Tab'); await p.waitForTimeout(200);
@@ -54,11 +54,11 @@ const MODE = process.argv[2] || 'local';
   await p.waitForSelector('#new-co'); await p.waitForFunction(() => !document.querySelector('tbody').textContent.includes('…'));
   const rows = await p.$$eval('tbody tr', r => r.map(x => x.textContent.replace(/\s+/g, ' ').trim().slice(0, 80)));
   console.log('7 console rows:', rows);
-  await p.screenshot({ path: 'w-console.png', fullPage: true });
+  await p.screenshot({ path: require('os').tmpdir() + '/w-console.png', fullPage: true });
   // open AL as Lightech
   await p.click('tbody tr:has-text("AlphaLeaders") [data-co-open]'); await p.waitForSelector('.kpis');
   console.log('8 impersonation banner:', await p.isVisible('#imp-banner'), 'has Josh:', await p.evaluate(() => !!window.__mcrm.state.leads.find(l => l.name === 'Josh Test')), '| reopened company keeps all leads:', await p.evaluate(() => window.__mcrm.state.leads.length > 20));
-  await p.screenshot({ path: 'w-imp.png' });
+  await p.screenshot({ path: require('os').tmpdir() + '/w-imp.png' });
   await p.click('#console-back'); await p.waitForSelector('#new-co');
   // create company
   await p.click('#new-co'); await p.fill('#f-co-name', 'Glow Academy'); await p.fill('#f-co-owner', 'Rara'); await p.fill('#f-co-email', 'rara@glow.id'); await p.fill('#f-co-pw', 'rahasia1');
@@ -70,7 +70,7 @@ const MODE = process.argv[2] || 'local';
   // 10. new tenant owner login via its link
   await p.goto('about:blank'); await p.goto(BASE + '#glow-academy'); await p.waitForSelector('#login-form');
   await p.fill('#login-email', 'rara@glow.id'); await p.fill('#login-pw', 'rahasia1'); await p.click('#login-form button[type=submit]');
-  try { await p.waitForSelector('#view h1', { timeout: 8000 }); } catch (e) { console.log('BODY10', (await txt()).slice(0, 400)); await p.screenshot({ path: 'w-fail10.png' }); }
+  try { await p.waitForSelector('#view h1', { timeout: 8000 }); } catch (e) { console.log('BODY10', (await txt()).slice(0, 400)); await p.screenshot({ path: require('os').tmpdir() + '/w-fail10.png' }); }
   console.log('10 new tenant owner in:', await p.textContent('#brand-name'), '| empty leads ok:', await p.evaluate(() => window.__mcrm.state.leads.length === 0));
   await p.click('#btn-logout');
   await p.goto('about:blank'); await p.goto(BASE + '#piwa'); await p.waitForSelector('.gate-card');
@@ -78,8 +78,8 @@ const MODE = process.argv[2] || 'local';
   // mobile + dark
   const m = await (await b.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'dark' })).newPage();
   if (MODE === 'local') {
-    await m.goto(BASE + '#alphaleaders'); await m.waitForSelector('[data-demo]'); await m.screenshot({ path: 'w-m-login.png' });
-    await m.click('[data-demo]:has-text("Owner")'); await m.waitForSelector('.kpis'); await m.screenshot({ path: 'w-m-dash.png' });
+    await m.goto(BASE + '#alphaleaders'); await m.waitForSelector('[data-demo]'); await m.screenshot({ path: require('os').tmpdir() + '/w-m-login.png' });
+    await m.click('[data-demo]:has-text("Owner")'); await m.waitForSelector('.kpis'); await m.screenshot({ path: require('os').tmpdir() + '/w-m-dash.png' });
     console.log('mobile scrollWidth', await m.evaluate(() => document.documentElement.scrollWidth));
   }
   console.log('ERRORS', errs);
