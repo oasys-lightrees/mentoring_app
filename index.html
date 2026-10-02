@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mentoring CRM</title>
+  <meta name="description" content="Lead-to-Deal CRM untuk bisnis coaching, mentoring, training & consulting.">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-logo" id="brand-logo">A</div>
+        <div>
+          <div class="brand-name" id="brand-name">Mentoring CRM</div>
+          <div class="brand-tag" id="brand-tag"></div>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <label class="ws-switch" title="Ganti workspace / brand">
+          <span class="muted small">Workspace</span>
+          <select id="ws-select"></select>
+        </label>
+        <button class="btn btn-primary" id="btn-add-lead">+ <span id="btn-add-lead-label">Lead</span></button>
+        <button class="btn btn-ghost-light" id="btn-add-session">+ <span id="btn-add-session-label">Session</span></button>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <a href="#dashboard" data-view="dashboard">Dashboard</a>
+      <a href="#pipeline" data-view="pipeline">Pipeline</a>
+      <a href="#leads" data-view="leads"><span data-label="leads">Leads</span></a>
+      <a href="#sessions" data-view="sessions"><span data-label="sessions">Sessions</span></a>
+      <a href="#settings" data-view="settings">Settings</a>
+    </nav>
+  </header>
+
+  <main id="view" class="container"></main>
+
+  <aside id="drawer" class="drawer" aria-hidden="true">
+    <div class="drawer-backdrop" data-close-drawer></div>
+    <div class="drawer-panel" id="drawer-panel"></div>
+  </aside>
+
+  <div id="modal" class="modal" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="modal-title"></h3>
+        <button class="icon-btn" data-close-modal aria-label="Tutup">✕</button>
+      </div>
+      <form id="modal-form" class="modal-body" autocomplete="off"></form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="assets/presets.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
