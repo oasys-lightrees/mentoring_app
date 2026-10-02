@@ -1,60 +1,61 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mentoring CRM</title>
-  <meta name="description" content="Lead-to-Deal CRM untuk bisnis coaching, mentoring, training & consulting.">
-  <link rel="stylesheet" href="assets/app.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- ARTIFACT:START -->
+<title>Lightrees Mentoring CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="assets/app.css">
+<!-- ARTIFACT:HEAD-END -->
 </head>
 <body>
+<div id="gate" hidden></div>
+
+<div id="app" hidden>
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
-        <div class="brand-logo" id="brand-logo">A</div>
-        <div>
-          <div class="brand-name" id="brand-name">Mentoring CRM</div>
-          <div class="brand-tag" id="brand-tag"></div>
+        <div class="brand-logo" id="brand-logo">L</div>
+        <div style="min-width:0">
+          <div class="brand-name ellipsis" id="brand-name">Mentoring CRM</div>
+          <div class="brand-tag ellipsis" id="brand-tag"></div>
         </div>
       </div>
       <div class="topbar-actions">
-        <label class="ws-switch" title="Ganti workspace / brand">
-          <span class="muted small">Workspace</span>
-          <select id="ws-select"></select>
-        </label>
-        <button class="btn btn-primary" id="btn-add-lead">+ <span id="btn-add-lead-label">Lead</span></button>
-        <button class="btn btn-ghost-light" id="btn-add-session">+ <span id="btn-add-session-label">Session</span></button>
+        <span class="sync local" id="sync" title="Status penyimpanan data"><span class="dot"></span><span id="sync-text">Lokal</span></span>
+        <select class="bar-select" id="ws-select" aria-label="Ganti workspace / brand"></select>
+        <button class="btn btn-gold" id="btn-add-lead" type="button">+ <span id="btn-add-lead-label">Lead</span></button>
+        <button class="btn btn-bar" id="btn-add-session" type="button">+ <span id="btn-add-session-label">Session</span></button>
+        <div class="me-chip" id="me-chip"></div>
       </div>
     </div>
-    <nav class="tabs" id="tabs">
-      <a href="#dashboard" data-view="dashboard">Dashboard</a>
-      <a href="#pipeline" data-view="pipeline">Pipeline</a>
-      <a href="#leads" data-view="leads"><span data-label="leads">Leads</span></a>
-      <a href="#sessions" data-view="sessions"><span data-label="sessions">Sessions</span></a>
-      <a href="#settings" data-view="settings">Settings</a>
-    </nav>
+    <nav class="tabs" id="tabs" aria-label="Menu utama"></nav>
   </header>
 
   <main id="view" class="container"></main>
+</div>
 
-  <aside id="drawer" class="drawer" aria-hidden="true">
-    <div class="drawer-backdrop" data-close-drawer></div>
-    <div class="drawer-panel" id="drawer-panel"></div>
-  </aside>
+<aside id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawer-backdrop" data-close-drawer></div>
+  <div class="drawer-panel" id="drawer-panel"></div>
+</aside>
 
-  <div id="modal" class="modal" aria-hidden="true">
-    <div class="modal-card">
-      <div class="modal-head">
-        <h3 id="modal-title"></h3>
-        <button class="icon-btn" data-close-modal aria-label="Tutup">✕</button>
-      </div>
-      <form id="modal-form" class="modal-body" autocomplete="off"></form>
+<div id="modal" class="modal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-head">
+      <h3 id="modal-title"></h3>
+      <button class="icon-btn" type="button" data-close-modal aria-label="Tutup">✕</button>
     </div>
+    <form id="modal-form" class="modal-body" autocomplete="off"></form>
   </div>
+</div>
 
-  <div id="toast" class="toast"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="assets/presets.js"></script>
-  <script src="assets/app.js"></script>
+<script src="assets/presets.js"></script>
+<script src="assets/app.js"></script>
 </body>
 </html>

@@ -1,68 +1,68 @@
-# Mentoring CRM — Lead to Deal (MVP)
+# Lightrees Mentoring CRM
 
-CRM untuk bisnis **coaching / mentoring / training / consulting** yang 1 sistemnya bisa dipakai beberapa brand (**AlphaLeaders**, **PIWA**, dst). Fokus MVP: **pantau dari lead masuk sampai deal**.
+Satu sistem **Lead → Deal → Client** untuk bisnis coaching, mentoring, training & consulting. Satu aplikasi bisa dipakai banyak brand (**AlphaLeaders**, **PIWA**, **iPlus Leader**, dst). Semua label, funnel dan master data bisa diatur tanpa coding.
 
-> Zero install. Buka `index.html` di browser → langsung jalan (offline juga bisa). Data tersimpan di browser (localStorage), bisa backup/restore JSON & export CSV.
+> **v0.3** = merge `mentoring_app` v0.1 (funnel CRM multi-brand) + `presensi/coaching.html` v0.2 (login, RBAC 5 peran, mentor↔asisten, client, action items).
 
-## Cara jalanin
+## Cara pakai
 
-```bash
-# opsi 1: double-click index.html
-# opsi 2: serve lokal (biar URL rapi, enak buat demo)
-npx serve .        # atau: python3 -m http.server 8080
-```
+| Mode | Cara buka | Data tersimpan di |
+|---|---|---|
+| **Cloud (rekomendasi)** | [Link Claude Artifact](https://claude.ai/artifact/PDk86467k37K7Qs4wWPKoh) (privat, bagikan lewat menu Share) | Database online artifact, sinkron real-time untuk semua user yang punya akses link |
+| **Lokal** | Buka `index.html` di browser (atau `npx serve .`) | localStorage browser itu saja (pakai Backup JSON rutin) |
 
-Deploy cepat: GitHub Pages / Netlify / Vercel (static, tanpa build).
+Aplikasinya mendeteksi sendiri mode mana yang dipakai. Indikator di header: **Cloud · tersimpan** atau **Tersimpan di browser ini**.
 
-## Apa yang sudah jalan (MVP "smallest triangle": Lead → Session → Deal)
+**Login demo:** semua akun awal memakai password `demo`, dan di layar login ada tombol 1 klik per peran. Matikan di **Settings → Brand → Login demo** sebelum go-live, lalu ganti password lewat **Tim & Akses**.
 
-| Modul | Fungsi |
+## Fitur
+
+| Modul | Isi |
 |---|---|
-| **Multi-workspace / brand** | Switch AlphaLeaders ↔ PIWA dari header. Tiap workspace punya warna, label, funnel, tim, program & data sendiri. Bisa bikin workspace baru dari template. |
-| **Label configurable** | Mentor → Coach / Teacher / PT / Consultant. Session → Class / Webinar / Workshop. Lead → Prospect, Client → Member, dll. Semua UI ikut berubah. |
-| **Funnel stage configurable** | Tambah/rename/urutkan stage, warna, probabilitas (%), SLA hari. Stage Won & Lost sudah built-in. |
-| **Lead input** | Nama, perusahaan, WA, email, sumber, PIC (BD/Sales), program diminati (harga auto-isi), next action + tanggal, catatan. Deteksi nomor WA duplikat. |
-| **Pipeline Kanban** | Drag & drop antar stage + dropdown (mobile). Kartu tampilkan nilai, PIC, jadwal sesi berikutnya, next action (merah kalau overdue), badge "stuck" kalau lewat SLA. |
-| **Won / Lost discipline** | Won wajib konfirmasi nilai deal & program. Lost wajib alasan → jadi data analitik. |
-| **Session scheduling** | Jenis sesi configurable & terhubung ke stage. **Jadwalkan sesi = lead otomatis maju ke stage itu.** Selesaikan sesi → catatan + pilih next step (lanjut / lost) + next action. WA reminder 1-klik (template configurable). |
-| **Dashboard** | KPI (lead masuk, pipeline & weighted pipeline, deal won, revenue, win rate, sales cycle), funnel conversion per stage, daftar "Butuh Aksi" (overdue, stuck, tanpa next step), leaderboard BD/Sales (SUKA-ready), performa per sumber lead, sesi mendatang. Filter periode. |
-| **Lead detail** | Drawer: klik stage untuk pindah, next action, detail, semua sesi, timeline riwayat stage (audit trail). |
-| **Data** | Backup/restore JSON, export CSV, isi ulang data demo, kosongkan data untuk go-live. |
-
-## Default funnel per template
-
-**AlphaLeaders** — Lead Masuk → COV Call (15m) → ABM Mapping (2–3j) → ABE Closing (2j) → Deal Won / Lost.
-Sesi delivery setelah deal: Coaching Session, Review / Induction.
-
-**PIWA** — Prospect Baru → Preview / Webinar → Konsultasi 1-on-1 → Penawaran → Enrolled / Lost.
-Sesi delivery: Class, Workshop.
-
-> Catatan: posisi ABE beda di 2 versi draft (closing vs. coaching rutin). Default di sini ABE = closing (sesuai planning doc). Kalau mau ABE = sesi rutin pasca-deal, cukup ubah di **Settings → Stage Funnel & Jenis Session** — tanpa coding.
-
-## Demo script (± 7 menit)
-
-1. **Dashboard (1 menit)**: “Ini kondisi bisnis real-time: berapa lead masuk, pipeline berapa rupiah, win rate, dan siapa yang closing paling banyak.” Tunjuk *Butuh Aksi*: “Sistem yang nagih follow-up, bukan manajer.”
-2. **Input lead live (1 menit)**: klik **+ Lead**, isi nama + WA + program. Harga auto-isi. Lead langsung muncul di pipeline.
-3. **Jadwalkan COV (1 menit)**: dari drawer lead, klik **Jadwalkan Session**. Lead otomatis pindah ke stage COV. Klik **WA reminder**.
-4. **Selesaikan sesi → ABM → Closing (2 menit)**: tandai selesai, isi catatan, pilih *Lanjut → ABM*. Ulangi sampai **Won**: masukkan nilai deal. Dashboard revenue & leaderboard langsung naik.
-5. **Switch ke PIWA (1 menit)**: ganti workspace di header. Label, warna, funnel & sesi berubah. “Satu engine, banyak brand.”
-6. **Settings (1 menit)**: ganti label *Mentor → Teacher* live. “Bisa dipakai untuk PT, consultant, trainer, apa pun.”
+| **Multi-workspace** | AlphaLeaders, PIWA dan iPlus dalam 1 app. Bisa ganti dari header, plus template untuk brand baru. |
+| **Label configurable** | Mentor → Coach / Teacher / PT / Consultant. Session → Class / Webinar / Workshop. Lead → Prospect, Client → Member. |
+| **Login + 7 peran** | Superadmin, Admin/PA/CS, Senior Mentor, Mentor, Ast. Mentor (terhubung ke mentornya), BD/Sales, Client. Menu & data otomatis menyesuaikan peran. |
+| **Lead & Pipeline** | Form lead (deteksi WA dobel), kanban drag & drop, Won wajib isi nilai deal, Lost wajib isi alasan, SLA "diam", next action + overdue. |
+| **Sessions** | Jenis sesi terhubung ke stage. Menjadwalkan sesi = lead otomatis naik stage. Ada catatan, action items, WA reminder 1 klik, dan asisten ikut otomatis. |
+| **Clients** | Deal Won otomatis jadi Client (program, coach, asisten, periode). Ada progress sesi, action items, countdown renewal, dan flag risiko churn. |
+| **Portal client** | Client login dan melihat progress program, jadwal & action plan miliknya. |
+| **Dashboard** | KPI, funnel conversion, daftar butuh aksi, leaderboard BD (SUKA), sesi mendatang, performa per sumber lead. |
+| **Data** | Backup/restore JSON, export CSV, hapus data contoh (go-live), workspace baru. |
 
 ## Arsitektur
 
 ```
-index.html          shell UI
-assets/presets.js   template workspace (AlphaLeaders, PIWA, Blank) + role
-assets/app.js       store, domain logic, views (dashboard, pipeline, leads, sessions, settings)
-assets/app.css      styling (tanpa framework, aman offline)
+index.html                  shell UI (mode lokal)
+assets/presets.js           template workspace + matriks hak akses
+assets/app.js               backend (cloud/lokal), RBAC, semua view
+assets/app.css              design system Lightrees (navy/emas, Plus Jakarta Sans), light & dark
+scripts/build-artifact.mjs  build dist/artifact.html untuk Claude Artifact
 ```
 
-Data model (per workspace): `config` (labels, stages, sessionTypes, sources, lostReasons, waTemplate) · `team` · `programs` · `leads` (+ `history` stage) · `sessions`.
-Layer `Store` sengaja tipis, supaya gampang diganti ke backend (Supabase / Odoo) tanpa ubah UI.
+**Model data per workspace:** `config` (labels, stages, sessionTypes, sources, lostReasons, waTemplate, demoLogin) · `accounts` · `programs` · `leads` (+history) · `sessions` (+actionItems) · `clients`.
 
-## Roadmap setelah MVP
+**Cloud:** `ws/{id}` (config + akun + program) · `ws/{id}/leads/*` · `ws/{id}/sessions/*` · `ws/{id}/clients/*`. Satu dokumen per record, sehingga edit dari banyak user tidak saling menimpa.
 
-- **Phase 2: Multi-user & cloud**: login + role (Senior Mentor, Coach, Ast. Mentor, PA/Admin/CS, BD), data di Supabase/Postgres atau Odoo module, "My leads" per user.
-- **Phase 3: Automation**: n8n + WA API untuk reminder H-1 & H-1 jam, lead form/webhook dari Meta Ads masuk otomatis, auto-assign round-robin ke BD.
-- **Phase 4: Delivery & retention**: client program 1 tahun (progress sesi, action plan), AI session summary (Claude API), churn/health score, renewal pipeline.
-- **Phase 5: Performance**: leaderboard SUKA + Self Compensation (komisi otomatis dari deal won), KPI per coach.
+**Update artifact:** `node scripts/build-artifact.mjs`, lalu publish ulang `dist/artifact.html` beserta `assets/*` ke URL artifact yang sama.
+
+## Batasan yang perlu diketahui
+
+- Login & RBAC adalah kontrol **tampilan**. Password di-hash (SHA-256 + salt), tapi pengecekan masih di sisi browser. Siapa yang bisa membuka link tetap diatur lewat **Share** di artifact. Untuk produksi skala besar, pindahkan auth ke backend (Supabase / Odoo).
+- Mode lokal tidak berbagi data antar device, jadi pakai mode cloud untuk tim.
+
+## Demo script (± 8 menit)
+
+1. **Login** pakai tombol *Superadmin*. Dashboard tampilkan KPI, funnel, dan daftar *Butuh aksi*.
+2. **+ Lead** diisi live (nama, WA, program); harga terisi otomatis.
+3. Di drawer lead, **Jadwalkan Session**. Lead otomatis pindah ke COV. Tunjukkan WA reminder.
+4. **Selesai** pada sesi, lalu *Lanjut → ABM*. Ulangi sampai **Deal Won**. Client otomatis terbentuk.
+5. Tab **Clients**: progress program, action items, renewal.
+6. **Keluar**, login sebagai *BD*: hanya lead miliknya yang terlihat. Login sebagai *Client*: portal.
+7. Ganti workspace ke **PIWA**: label, warna & funnel berubah. Satu engine untuk banyak brand.
+
+## Roadmap
+
+- **Automation**: n8n + WA API (reminder H-1, lead dari Meta Ads masuk otomatis, round-robin BD).
+- **AI**: ringkasan sesi otomatis (Claude API), lalu progress report untuk client.
+- **Performance**: komisi otomatis dari deal won (Self Compensation), KPI per coach.
+- **Backend production**: auth server-side, audit log, integrasi Odoo.
