@@ -628,7 +628,7 @@
     const won = st.find((s) => s.type === 'won'), lost = st.find((s) => s.type === 'lost');
     const owners = d.accounts.filter((a) => a.role === 'bd');
     const ownerPool = owners.length ? owners : d.accounts.filter((a) => ['admin', 'assistant', 'superadmin'].includes(a.role));
-    const mentors = d.accounts.filter((a) => ['mentor', 'senior'].includes(a.role));
+    const mentors = d.accounts.filter((a) => ['mentor', 'senior'].includes(a.role) || a.coach);
     const mentorPool = mentors.length ? mentors : d.accounts;
     const asstOf = (mid) => (d.accounts.find((a) => a.role === 'assistant' && a.mentorId === mid) || {}).id || '';
     const now = Date.now();
@@ -756,7 +756,8 @@
   const isWon = (l) => stage(l.stageId).type === 'won';
   const isLost = (l) => stage(l.stageId).type === 'lost';
   const stageEnteredAt = (l) => { for (let i = l.history.length - 1; i >= 0; i--) if (l.history[i].to === l.stageId) return l.history[i].at; return l.createdAt; };
-  const mentorsList = () => S.accounts.filter((a) => ['senior', 'mentor'].includes(a.role) && a.active !== false);
+  // Coaches: senior/mentor roles, plus Owners/Admins who also coach (e.g. founders) — they keep their full access.
+  const mentorsList = () => S.accounts.filter((a) => a.active !== false && (['senior', 'mentor'].includes(a.role) || (a.coach && ['superadmin', 'admin'].includes(a.role))));
   const staffList = () => S.accounts.filter((a) => a.role !== 'client' && a.active !== false);
   const ownersList = () => {
     const order = { bd: 0, admin: 1, assistant: 2, senior: 3, superadmin: 4, mentor: 5 };
@@ -1825,7 +1826,7 @@
     const rows = S.accounts.slice().sort((a, b) => window.ROLE_KEYS.indexOf(a.role) - window.ROLE_KEYS.indexOf(b.role) || a.name.localeCompare(b.name));
     const counts = (a) => {
       if (a.role === 'bd') { const n = S.leads.filter((l) => l.ownerId === a.id && isOpen(l)).length; return tr(`${n} open ${L('leads')}`, `${n} ${L('leads')} aktif`); }
-      if (['mentor', 'senior'].includes(a.role)) { const n = S.clients.filter((c) => c.coachId === a.id && c.status === 'active').length; return tr(`${n} active ${L('clients')}`, `${n} ${L('clients')} aktif`); }
+      if (['mentor', 'senior'].includes(a.role) || a.coach) { const n = S.clients.filter((c) => c.coachId === a.id && c.status === 'active').length; return (a.coach ? L('mentor') + ' · ' : '') + tr(`${n} active ${L('clients')}`, `${n} ${L('clients')} aktif`); }
       if (a.role === 'assistant') return tr(`assists ${accName(a.mentorId)}`, `asisten ${accName(a.mentorId)}`);
       if (a.role === 'client') return tr('portal access', 'akses portal');
       return '';
@@ -1869,6 +1870,7 @@
         <label class="field"><span>${tr('Phone', 'No. HP')}</span><input name="phone" id="f-acc-phone" value="${esc(d.phone || '')}"></label>
         <label class="field"><span>${tr('Role *', 'Peran *')}</span><select name="role" id="f-acc-role">${options(roleChoices, d.role, (r) => r, roleName)}</select></label>
         <label class="field" id="f-acc-mentor-wrap"><span>${esc(tr(`Assistant to ${L('mentor')}`, `Asisten untuk ${L('mentor')}`))}</span><select name="mentorId" id="f-acc-mentor">${options(mentorsList(), d.mentorId, (m) => m.id, (m) => m.name, '—')}</select></label>
+        <label class="check" id="f-acc-coach-wrap" style="align-self:end"><input type="checkbox" name="coach" id="f-acc-coach" ${d.coach ? 'checked' : ''}> ${esc(tr(`Also works as ${L('mentor')}`, `Juga sebagai ${L('mentor')}`))}</label>
         <label class="field" id="f-acc-client-wrap"><span>${esc(tr(`Linked ${L('client')}`, `Terhubung ke ${L('client')}`))}</span><select name="clientId" id="f-acc-client">${options(S.clients, d.clientId, (c) => c.id, (c) => c.name, '—')}</select></label>
         <label class="field"><span>${isNew ? 'Password *' : tr('New password', 'Password baru')}</span><input name="password" id="f-acc-pw" type="text" ${isNew ? 'required' : ''} placeholder="${esc(isNew ? tr('At least 4 characters', 'Min. 4 karakter') : tr('Leave empty to keep', 'Kosongkan jika tidak diganti'))}"></label>
         <label class="field"><span>Status</span><select name="active" id="f-acc-active">${options([['1', tr('Active', 'Aktif')], ['0', tr('Inactive', 'Nonaktif')]], d.active === false ? '0' : '1', (x) => x[0], (x) => x[1])}</select></label>
@@ -1882,14 +1884,14 @@
       if (v.password && v.password.length < 4) { toast(tr('Password needs at least 4 characters', 'Password minimal 4 karakter')); return false; }
       if (!isNew && d.id === me.id && v.active === '0') { toast(tr('You cannot deactivate your own account', 'Tidak bisa menonaktifkan akun sendiri')); return false; }
       const target = a || { id: uid('u') };
-      Object.assign(target, { name: v.name.trim(), email, phone: v.phone, role: v.role, active: v.active !== '0', mentorId: v.role === 'assistant' ? v.mentorId : '', clientId: v.role === 'client' ? v.clientId : '' });
+      Object.assign(target, { name: v.name.trim(), email, phone: v.phone, role: v.role, coach: !!v.coach && ['superadmin', 'admin'].includes(v.role), active: v.active !== '0', mentorId: v.role === 'assistant' ? v.mentorId : '', clientId: v.role === 'client' ? v.clientId : '' });
       if (v.password) setPassword(target, v.password);
       if (isNew) S.accounts.push(target);
       if (target.role === 'client' && target.clientId) { const c = client(target.clientId); if (c) c.accountId = target.id; }
       save(); toast(isNew ? tr(`Account for ${target.name} created`, `Akun ${target.name} dibuat`) : tr('Account saved', 'Akun disimpan'));
       renderMain();
     });
-    const sync = () => { const r = $('#f-acc-role').value; $('#f-acc-mentor-wrap').hidden = r !== 'assistant'; $('#f-acc-client-wrap').hidden = r !== 'client'; };
+    const sync = () => { const r = $('#f-acc-role').value; $('#f-acc-mentor-wrap').hidden = r !== 'assistant'; $('#f-acc-client-wrap').hidden = r !== 'client'; $('#f-acc-coach-wrap').hidden = !['superadmin', 'admin'].includes(r); };
     $('#f-acc-role').onchange = sync; sync();
     const del = $('#acc-del');
     if (del) del.onclick = () => {
