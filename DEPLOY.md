@@ -22,7 +22,7 @@ Browser ──► lightech.co.id/alpha/            (file statis: index.html + as
 3. Pilih fungsi **`setup`** → **Run** → setujui izin.
    - Buka **Execution log**: tercatat email `super@lightech.co.id` beserta **password sekali pakai**. Simpan di password manager.
    - ✅ Cek: Sheet sekarang punya tab `docs` dan `audit`.
-   - Lalu pilih fungsi **`setupAlphaLeaders`** → **Run**. Company AlphaLeaders langsung jadi: logo, tema hitam-emas, funnel COV → ABM → ABE, 3 program. Execution log mencatat **password sekali pakai** untuk Owner Coach Ferly F Raya (`ferly@alphaleaders.id`). Anggota tim lain ditambahkan Owner di **Team & Access**.
+   - Lalu pilih fungsi **`setupAlphaLeaders`** → **Run**. Company AlphaLeaders langsung jadi: logo, tema hitam-emas, funnel COV → ABM → ABE, 3 program. Execution log mencatat **password sekali pakai** untuk kedua Owner: Coach Ferly F Raya (`ferly@alphaleaders.id`) dan Ferry Davira (`ferry@alphaleaders.id`). Anggota tim lain ditambahkan Owner di **Team & Access**.
 4. **Deploy → New deployment → Web app**
    - Execute as: **Me**
    - Who has access: **Anyone**
@@ -56,7 +56,7 @@ Di cPanel → **File Manager** → `public_html/`:
 1. Di `https://lightech.co.id/alpha/#lightech` login dengan `super@lightech.co.id` + password dari langkah 1.
 2. **Lightech admins → Edit diri sendiri → ganti password.** Peringatan "default password" harus hilang.
 3. AlphaLeaders sudah dibuat oleh `setupAlphaLeaders` (langkah 1). Company lain: **Companies → + New company**.
-4. Kirim ke owner AlphaLeaders: link **`https://lightech.co.id/alpha/`** + `ferly@alphaleaders.id` + password sekali pakai dari Execution log, lewat kanal privat (WA pribadi, bukan grup). Owner langsung ganti password di **Team & Access**.
+4. Kirim ke owner AlphaLeaders: link **`https://lightech.co.id/alpha/`** + `ferly@alphaleaders.id` / `ferry@alphaleaders.id` + password sekali pakai masing-masing dari Execution log, lewat kanal privat (WA pribadi, bukan grup). Owner langsung ganti password di **Team & Access**.
 5. ✅ Cek: buka link itu di jendela incognito. Yang muncul hanya brand AlphaLeaders.
 6. **Opsional: form lead publik.** Owner → Settings → *Lead capture form* → centang *Form is live*. Link `https://lightech.co.id/alpha/?form=alphaleaders` bisa dipasang di bio Instagram / landing page iklan (tambah `&src=Meta Ads` per kampanye).
 7. **Sebelum data asli masuk:**

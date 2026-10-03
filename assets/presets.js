@@ -40,7 +40,7 @@
       },
       accounts: [
         { id: 'u-owner', name: 'Coach Ferly F Raya', email: 'ferly@alphaleaders.id', role: 'superadmin', coach: true },
-        { id: 'u-ferry', name: 'Ferry Davira', email: 'ferry@alphaleaders.id', role: 'senior' },
+        { id: 'u-ferry', name: 'Ferry Davira', email: 'ferry@alphaleaders.id', role: 'superadmin', coach: true },
         { id: 'u-lisa', name: 'Tami', email: 'tami@alphaleaders.id', role: 'admin' },
         { id: 'u-anita', name: 'Anita', email: 'anita@alphaleaders.id', role: 'admin' },
         { id: 'm-hendra', name: 'Josshhua Abraham', email: 'josshhua@alphaleaders.id', role: 'mentor' },
