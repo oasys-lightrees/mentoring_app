@@ -390,3 +390,6 @@ tr.clickable:hover td { background: var(--hover); }
 .mini-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; padding: 6px 4px; border-bottom: 1px solid var(--line); }
 .mini-table td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
 .mini-table .right { text-align: right; }
+:root[data-noir] .chart .bar { fill: color-mix(in srgb, var(--gold) 45%, var(--card)); }
+:root[data-noir] .chart .bar-cur { fill: var(--gold); }
+:root[data-noir] .meter span { background: var(--gold); }
