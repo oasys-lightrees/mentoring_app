@@ -3013,6 +3013,7 @@
   }
   async function boot() {
     bindChrome();
+    if (!location.hash && urlParam('view')) { try { history.replaceState(null, '', '#' + urlParam('view').toLowerCase()); } catch (e) { location.hash = '#' + urlParam('view').toLowerCase(); } }
     document.documentElement.lang = LANG;
     showLoading();
     if (!Backend) Backend = await pickBackend();

@@ -24,17 +24,20 @@ const shell = `<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="__ASSETS__assets/app.css">
+<link rel="stylesheet" href="__ASSETS__assets/app.css" onerror="this.onerror=null;this.href='__FALLBACK__assets/app.css'">
 </head>
 <body>
 ${body}
 <script>window.MCRM_CONFIG = __CONFIG__;</script>
 <script src="__ASSETS__assets/presets.js"></script>
+<script>window.PRESETS || document.write('<script src="__FALLBACK__assets/presets.js"><\\/script>');</script>
 <script src="__ASSETS__assets/app.js"></script>
+<script>window.__mcrm || document.write('<script src="__FALLBACK__assets/app.js"><\\/script>');</script>
 </body>
 </html>`;
 const block = `${START}
 const ASSET_BASE = 'https://cdn.jsdelivr.net/gh/oasys-lightrees/mentoring_app@${ref}/';
+const ASSET_FALLBACK = 'https://rawcdn.githack.com/oasys-lightrees/mentoring_app/${ref}/'; // used only if jsDelivr is unreachable
 const APP_SHELL = ${JSON.stringify(shell)};
 ${END}`;
 const re = new RegExp(START.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\s\\S]*?' + END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
