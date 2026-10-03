@@ -181,12 +181,10 @@ assert.ok(r.ok && r.rows.some((x) => x.action === 'login_failed') && r.rows.some
 // One-click company setup for go-live
 const fresh = createServer(); fresh.setup(); fresh.setupAlphaLeaders(); fresh.setupAlphaLeaders();
 const ownerPw = (fresh.logs.find((l) => l.includes('ferly@alphaleaders.id')) || '').match(/one-time password: (\S+)/)[1];
-const ferryPw = (fresh.logs.find((l) => l.includes('ferry@alphaleaders.id')) || '').match(/one-time password: (\S+)/)[1];
 assert.ok(fresh.logs.some((l) => l.includes('already exists'))); ok('setupAlphaLeaders runs once; a second run changes nothing');
 const fb = fresh.post({ action: 'brand', slug: 'alphaleaders' });
 assert.ok(fb.ok && fb.config.logo.endsWith('alphaleaders-logo.png') && fb.config.bar === '#0a0a0a' && fb.chips.length === 0); ok('AlphaLeaders ships with its logo and theme, demo sign-in off');
 const fo = fresh.post({ action: 'login', email: 'ferly@alphaleaders.id', password: ownerPw, slug: 'alphaleaders' });
-const fy = fresh.post({ action: 'login', email: 'ferry@alphaleaders.id', password: ferryPw, slug: 'alphaleaders' });
-assert.ok(fo.ok && fy.ok && fo.session.role === 'superadmin' && ownerPw !== ferryPw); ok('both AlphaLeaders Owners (Ferly, Ferry) sign in with their own one-time passwords');
+assert.ok(fo.ok && fo.session.role === 'superadmin'); ok('AlphaLeaders Owner (Coach Ferly F Raya) signs in with the one-time password');
 assert.strictEqual(fresh.post({ action: 'login', email: 'ferly@alphaleaders.id', password: 'demo', slug: 'alphaleaders' }).ok, false); ok('no default password on the production company');
 console.log(`\n${n} server checks passed`);

@@ -83,7 +83,7 @@ function setup() {
 }
 
 // Creates the AlphaLeaders company (brand, funnel, programs, Owner account) once. Safe to run again.
-const FIRST_COMPANY = { slug: 'alphaleaders', owners: [{ id: 'u-owner', name: 'Coach Ferly F Raya', email: 'ferly@alphaleaders.id' }, { id: 'u-ferry', name: 'Ferry Davira', email: 'ferry@alphaleaders.id' }] };
+const FIRST_COMPANY = { slug: 'alphaleaders', owners: [{ id: 'u-owner', name: 'Coach Ferly F Raya', email: 'ferly@alphaleaders.id' }] }; // more team members: Team & Access
 function setupAlphaLeaders() {
   const store = load_();
   if (metas_(store).some(function (m) { return slugOf_(m) === FIRST_COMPANY.slug; })) { Logger.log('AlphaLeaders already exists. Nothing changed.'); return; }

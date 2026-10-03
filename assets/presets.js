@@ -40,18 +40,17 @@
       },
       accounts: [
         { id: 'u-owner', name: 'Coach Ferly F Raya', email: 'ferly@alphaleaders.id', role: 'superadmin', coach: true },
-        { id: 'u-ferry', name: 'Ferry Davira', email: 'ferry@alphaleaders.id', role: 'superadmin', coach: true },
+        { id: 'u-ferry', name: 'Ferry Davira', email: 'ferry@alphaleaders.id', role: 'senior' },
         { id: 'u-lisa', name: 'Tami', email: 'tami@alphaleaders.id', role: 'admin' },
         { id: 'u-anita', name: 'Anita', email: 'anita@alphaleaders.id', role: 'admin' },
-        { id: 'm-hendra', name: 'Josshhua Abraham', email: 'josshhua@alphaleaders.id', role: 'senior' },
+        { id: 'm-hendra', name: 'Josshhua Abraham', email: 'josshhua@alphaleaders.id', role: 'mentor' },
         { id: 'm-sylvia', name: 'Anthony Sihombing', email: 'anthony@alphaleaders.id', role: 'mentor' },
         { id: 'm-alvin', name: 'Wulansari Suharto', email: 'wulansari@alphaleaders.id', role: 'mentor' },
         { id: 'm-charles', name: 'Charles Suryana', email: 'charles@alphaleaders.id', role: 'mentor' },
         { id: 'm-malvin', name: 'Malvin Haryanto', email: 'malvin@alphaleaders.id', role: 'mentor' },
         { id: 'm-rizki', name: 'Rizki Esa', email: 'rizki@alphaleaders.id', role: 'mentor' },
-        { id: 'b-rina', name: 'Rina', email: 'rina@alphaleaders.id', role: 'bd' },
-        { id: 'b-fajar', name: 'Fajar', email: 'fajar@alphaleaders.id', role: 'bd' },
-        { id: 'b-maya', name: 'Maya', email: 'maya@alphaleaders.id', role: 'bd' }
+        { id: 'b-rina', name: 'Julia', email: 'julia@alphaleaders.id', role: 'bd' },
+        { id: 'b-fajar', name: 'Paul', email: 'paul@alphaleaders.id', role: 'bd' }
       ],
       programs: [
         { id: 'p-private', name: '1-Year Private Coaching', format: 'Private', price: 120000000, sessions: 24, months: 12 },
