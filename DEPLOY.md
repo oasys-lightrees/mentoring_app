@@ -1,5 +1,7 @@
 # Deploy ke lightech.co.id/alpha
 
+> **Jalur tercepat (disarankan untuk mulai): [GO-LIVE.md](GO-LIVE.md).** Cukup Google Sheet + Apps Script, app langsung jalan di link Apps Script tanpa hosting. Runbook di bawah ini untuk memindahkan tampilan ke domain lightech.co.id/alpha nanti.
+
 Runbook untuk mengganti versi yang sekarang ada di `lightech.co.id/alpha` dengan Lightech Mentoring App. Estimasi waktu: **±20 menit**. Setiap langkah punya titik cek, dan ada jalur rollback.
 
 ## Ringkasan arsitektur
@@ -27,7 +29,7 @@ Browser ──► lightech.co.id/alpha/            (file statis: index.html + as
    - Execute as: **Me**
    - Who has access: **Anyone**
    - **Deploy**, lalu salin URL yang berakhiran `/exec`.
-   - ✅ Cek: buka URL itu di browser. Harus muncul `{"ok":true,"service":"lightech-mentoring-app",...}`.
+   - ✅ Cek: buka URL itu + `?health=1`. Harus muncul `{"ok":true,"service":"lightech-mentoring-app",...}`. Tanpa `?health=1`, URL itu langsung menampilkan app.
 
 ## Langkah 2 — Paket website (2 menit)
 

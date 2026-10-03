@@ -7,7 +7,7 @@ Each company (AlphaLeaders, PIWA, iPlus, …) gets its own branded app; Lightech
 
 | Mode | URL | Data & sign-in | Use for |
 |---|---|---|---|
-| **Production** | `lightech.co.id/alpha/` (static files) + Google Apps Script API | Google Sheet; sign-in, tenant isolation & audit log enforced **on the server** | Real companies — see [DEPLOY.md](DEPLOY.md) |
+| **Production** | The Apps Script web app link (serves the app itself), later also `lightech.co.id/alpha/` | Google Sheet; sign-in, tenant isolation & audit log enforced **on the server** | Real companies — start with [GO-LIVE.md](GO-LIVE.md), domain in [DEPLOY.md](DEPLOY.md) |
 | **Demo** | [Claude Artifact](https://claude.ai/artifact/PDk86467k37K7Qs4wWPKoh) | Artifact database, real-time | Presentations with example data |
 | **Local** | open `index.html` | This browser only | Offline demo / development |
 
