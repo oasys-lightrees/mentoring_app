@@ -1,68 +1,77 @@
-# Mentoring CRM — Lead to Deal (MVP)
+# Lightech Mentoring App
 
-CRM untuk bisnis **coaching / mentoring / training / consulting** yang 1 sistemnya bisa dipakai beberapa brand (**AlphaLeaders**, **PIWA**, dst). Fokus MVP: **pantau dari lead masuk sampai deal**.
+White-label **Lead → Deal → Client** CRM for coaching, mentoring, training and consulting companies.
+Each company (AlphaLeaders, PIWA, iPlus, …) gets its own branded app; Lightech manages all of them from one console. UI in **English / Bahasa Indonesia** (toggle top-right).
 
-> Zero install. Buka `index.html` di browser → langsung jalan (offline juga bisa). Data tersimpan di browser (localStorage), bisa backup/restore JSON & export CSV.
+## Where it runs
 
-## Cara jalanin
+| Mode | URL | Data & sign-in | Use for |
+|---|---|---|---|
+| **Production** | `lightech.co.id/alpha/` (static files) + Google Apps Script API | Google Sheet; sign-in, tenant isolation & audit log enforced **on the server** | Real companies — see [DEPLOY.md](DEPLOY.md) |
+| **Demo** | [Claude Artifact](https://claude.ai/artifact/PDk86467k37K7Qs4wWPKoh) | Artifact database, real-time | Presentations with example data |
+| **Local** | open `index.html` | This browser only | Offline demo / development |
 
-```bash
-# opsi 1: double-click index.html
-# opsi 2: serve lokal (biar URL rapi, enak buat demo)
-npx serve .        # atau: python3 -m http.server 8080
-```
+The app picks the mode automatically: `assets/config.js → apiUrl` set → Production; inside a Claude Artifact → Demo; otherwise Local. `defaultTenant` makes the bare link open one company's sign-in (the production package and the demo default to AlphaLeaders; Lightech uses `#lightech`).
 
-Deploy cepat: GitHub Pages / Netlify / Vercel (static, tanpa build).
+## How people sign in
 
-## Apa yang sudah jalan (MVP "smallest triangle": Lead → Session → Deal)
+| Who | Link | What they see |
+|---|---|---|
+| A company's team (e.g. AlphaLeaders) | app link (AlphaLeaders is the default) or app link + `#code` | Only their brand: logo, colours, terminology, data. No other company is ever shown. |
+| Lightech admins | app link + `#lightech` | **Lightech Console**: every company, stats, create / edit / suspend companies, open any company as Owner, audit log (Production). |
 
-| Modul | Fungsi |
+Demo credentials (Demo & Local modes, password `demo`): `super@lightech.co.id`, `owner@alphaleaders.id`, `owner@piwa.id`, `owner@iplus.id`, plus one-click buttons per role on each company's sign-in page. Production creates its own one-time admin password during setup.
+
+## Features
+
+| Area | What it does |
 |---|---|
-| **Multi-workspace / brand** | Switch AlphaLeaders ↔ PIWA dari header. Tiap workspace punya warna, label, funnel, tim, program & data sendiri. Bisa bikin workspace baru dari template. |
-| **Label configurable** | Mentor → Coach / Teacher / PT / Consultant. Session → Class / Webinar / Workshop. Lead → Prospect, Client → Member, dll. Semua UI ikut berubah. |
-| **Funnel stage configurable** | Tambah/rename/urutkan stage, warna, probabilitas (%), SLA hari. Stage Won & Lost sudah built-in. |
-| **Lead input** | Nama, perusahaan, WA, email, sumber, PIC (BD/Sales), program diminati (harga auto-isi), next action + tanggal, catatan. Deteksi nomor WA duplikat. |
-| **Pipeline Kanban** | Drag & drop antar stage + dropdown (mobile). Kartu tampilkan nilai, PIC, jadwal sesi berikutnya, next action (merah kalau overdue), badge "stuck" kalau lewat SLA. |
-| **Won / Lost discipline** | Won wajib konfirmasi nilai deal & program. Lost wajib alasan → jadi data analitik. |
-| **Session scheduling** | Jenis sesi configurable & terhubung ke stage. **Jadwalkan sesi = lead otomatis maju ke stage itu.** Selesaikan sesi → catatan + pilih next step (lanjut / lost) + next action. WA reminder 1-klik (template configurable). |
-| **Dashboard** | KPI (lead masuk, pipeline & weighted pipeline, deal won, revenue, win rate, sales cycle), funnel conversion per stage, daftar "Butuh Aksi" (overdue, stuck, tanpa next step), leaderboard BD/Sales (SUKA-ready), performa per sumber lead, sesi mendatang. Filter periode. |
-| **Lead detail** | Drawer: klik stage untuk pindah, next action, detail, semua sesi, timeline riwayat stage (audit trail). |
-| **Data** | Backup/restore JSON, export CSV, isi ulang data demo, kosongkan data untuk go-live. |
+| **White-label tenants** | Per-company logo, icon, header colour (black & gold for AlphaLeaders), brand name, tagline, terminology (Mentor → Coach/Teacher/PT/Consultant, Session → Class/Webinar/Workshop), funnel stages, session types, programs, sources. The company Owner configures it in **Settings**. |
+| **Lightech Console** | Company list with users, leads, deals won, revenue, active clients, last activity. Create company from a template (with or without example data), set login code, suspend (blocks sign-in), reset owner password, delete. Manage Lightech admins. "Open" a company as its Owner with a visible Lightech banner. |
+| **Roles inside a company** | Owner, Admin/PA/CS, Senior Mentor, Mentor, Asst. Mentor (linked to a mentor), BD/Sales, Client. Menus and data scoped per role. |
+| **Lead & pipeline** | Lead form (duplicate WhatsApp check), drag-and-drop kanban, Won requires deal value, Lost requires a reason, stage SLA "idle" flag, next action + overdue. |
+| **Sessions** | Types linked to funnel stages; booking a session moves the lead forward automatically. Notes, action items, one-click WhatsApp reminder, assistant auto-assigned. |
+| **Clients** | Deal Won creates a client with program, coach, assistant and period. Session progress, action items, renewal countdown, churn-risk flag. Client portal login. |
+| **Dashboard** | KPIs, funnel conversion, needs-action list, BD leaderboard (SUKA), upcoming sessions, performance by lead source. |
+| **Reports** | 12-month revenue chart against team target, weighted forecast by stage, monthly cohorts (lead → deal), lead-source ROI, coach utilisation (hours, no-show, action-item completion). CSV export and print to PDF. |
+| **Self Compensation** | Commission % on revenue closed, monthly target per BD and bonus % when the target is hit. Same formula for everyone; each BD sees only their own pay line. |
+| **Lead capture form** | Public form per company (`?form=<code>`, add `&src=Instagram` per campaign). Lands in the first stage, valued from the chosen program, auto-assigned to the BD with the fewest open leads. Honeypot, rate limit and duplicate check on the server. |
+| **Import** | Paste from Excel / Google Sheets or upload CSV; columns matched by name (EN/ID), duplicates by WhatsApp number skipped, round-robin assignment. |
+| **Calendar** | Week view of sessions per coach and type, alongside the list view. |
+| **Resilience** | Expired sign-in asks for the password again without losing unsaved edits; offline start keeps the session; failed saves retry automatically. Installable on phones (PWA) in the production package. |
+| **Data** | Cloud (artifact database, real-time) or local browser storage. JSON backup/restore, CSV export, delete example data for go-live. |
 
-## Default funnel per template
-
-**AlphaLeaders** — Lead Masuk → COV Call (15m) → ABM Mapping (2–3j) → ABE Closing (2j) → Deal Won / Lost.
-Sesi delivery setelah deal: Coaching Session, Review / Induction.
-
-**PIWA** — Prospect Baru → Preview / Webinar → Konsultasi 1-on-1 → Penawaran → Enrolled / Lost.
-Sesi delivery: Class, Workshop.
-
-> Catatan: posisi ABE beda di 2 versi draft (closing vs. coaching rutin). Default di sini ABE = closing (sesuai planning doc). Kalau mau ABE = sesi rutin pasca-deal, cukup ubah di **Settings → Stage Funnel & Jenis Session** — tanpa coding.
-
-## Demo script (± 7 menit)
-
-1. **Dashboard (1 menit)**: “Ini kondisi bisnis real-time: berapa lead masuk, pipeline berapa rupiah, win rate, dan siapa yang closing paling banyak.” Tunjuk *Butuh Aksi*: “Sistem yang nagih follow-up, bukan manajer.”
-2. **Input lead live (1 menit)**: klik **+ Lead**, isi nama + WA + program. Harga auto-isi. Lead langsung muncul di pipeline.
-3. **Jadwalkan COV (1 menit)**: dari drawer lead, klik **Jadwalkan Session**. Lead otomatis pindah ke stage COV. Klik **WA reminder**.
-4. **Selesaikan sesi → ABM → Closing (2 menit)**: tandai selesai, isi catatan, pilih *Lanjut → ABM*. Ulangi sampai **Won**: masukkan nilai deal. Dashboard revenue & leaderboard langsung naik.
-5. **Switch ke PIWA (1 menit)**: ganti workspace di header. Label, warna, funnel & sesi berubah. “Satu engine, banyak brand.”
-6. **Settings (1 menit)**: ganti label *Mentor → Teacher* live. “Bisa dipakai untuk PT, consultant, trainer, apa pun.”
-
-## Arsitektur
+## Project layout
 
 ```
-index.html          shell UI
-assets/presets.js   template workspace (AlphaLeaders, PIWA, Blank) + role
-assets/app.js       store, domain logic, views (dashboard, pipeline, leads, sessions, settings)
-assets/app.css      styling (tanpa framework, aman offline)
+index.html                  app shell
+assets/config.js            deployment config (apiUrl)
+assets/presets.js           company templates, roles, permission matrix, reserved login codes
+assets/app.js               storage backends (server / artifact / local), tenants, Lightech console, RBAC, views, EN/ID
+assets/app.css              Lightrees design system (navy/gold, Plus Jakarta Sans), light & dark
+server/Code.gs              Production API on Google Apps Script + Sheets (auth, isolation, audit)
+scripts/build-deploy.mjs    builds dist/alpha + dist/lightech-alpha.zip for lightech.co.id/alpha
+scripts/build-artifact.mjs  builds dist/artifact.html for the Claude Artifact
+tests/                      server isolation tests + browser end-to-end for all three modes
 ```
 
-Data model (per workspace): `config` (labels, stages, sessionTypes, sources, lostReasons, waTemplate) · `team` · `programs` · `leads` (+ `history` stage) · `sessions`.
-Layer `Store` sengaja tipis, supaya gampang diganti ke backend (Supabase / Odoo) tanpa ubah UI.
+## Tests
 
-## Roadmap setelah MVP
+`npm install && npx playwright install chromium && npm test` runs:
+- `tests/server.test.js`: 60 API checks: tenant isolation, least-privilege visibility per role, Owner and Lightech-admin protection, input validation, lead form spam guards, lockout, suspension, audit
+- `tests/e2e-server.js`: 25 browser checks against the real `server/Code.gs` through an in-memory Apps Script harness, including session expiry and offline start
+- `tests/e2e-features.js`: 25 checks for reports, compensation, import, calendar and the public lead form (desktop and phone)
+- `tests/e2e-local-cloud.js local|cloud`: white-label flows, console, language toggle, suspension, data integrity when re-opening a company
 
-- **Phase 2: Multi-user & cloud**: login + role (Senior Mentor, Coach, Ast. Mentor, PA/Admin/CS, BD), data di Supabase/Postgres atau Odoo module, "My leads" per user.
-- **Phase 3: Automation**: n8n + WA API untuk reminder H-1 & H-1 jam, lead form/webhook dari Meta Ads masuk otomatis, auto-assign round-robin ke BD.
-- **Phase 4: Delivery & retention**: client program 1 tahun (progress sesi, action plan), AI session summary (Claude API), churn/health score, renewal pipeline.
-- **Phase 5: Performance**: leaderboard SUKA + Self Compensation (komisi otomatis dari deal won), KPI per coach.
+Browser tests serve the app over a local HTTP server. Run them against the deploy package with `ROOT=$PWD/dist/alpha npm run test:e2e`.
+
+## Governance
+
+Security, data protection (UU PDP) and change management: see [GOVERNANCE.md](GOVERNANCE.md).
+
+## Roadmap
+
+1. **Production hosting**: own domain per company (`crm.alphaleaders.id`), Supabase auth + row-level security per tenant.
+2. **Automation**: WhatsApp API reminders (H-1), Meta Lead Ads webhook straight into the capture endpoint.
+3. **AI**: automatic session summaries and client progress reports.
+4. **Billing for Lightech**: plan per company, usage dashboard in the console.
