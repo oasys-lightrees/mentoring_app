@@ -74,6 +74,27 @@ let BASE = process.env.BASE;
   const webLead = s2.leads.find((l) => l.name === 'Web Visitor');
   ok('form submission is in the pipeline with source, owner and value', webLead && webLead.source === 'Instagram' && s2.accounts.find((a) => a.id === webLead.ownerId).role === 'bd' && webLead.value > 0 && webLead.stageId === s2.config.stages[0].id);
 
+  // Investment matrix: paste from Excel, term pricing, payment schedule (sample numbers, not real prices)
+  await p.goto(BASE + '#settings'); await p.waitForSelector('#paste-matrix'); await p.click('#paste-matrix');
+  await p.fill('#f-matrix', '\tTEST Elite™\tTST\tRp 10 – 20 M / bulan\t80000000\t70000000\t60000000\t960000000\t840000000\t720000000\tTeam Maks 8 pax\t2×\t2×\t✓\n\tTEST Start™\tTSS\tRp 500 jt – 1 M / bulan\tRp 16.000.000\tRp 13.000.000\tRp 12.000.000\t192000000\t156000000\t144000000\tOwner, maks 1 pax\t—\t—\t—');
+  await p.dispatchEvent('#f-matrix', 'input');
+  ok('pasted Investment Matrix rows are recognised', (await p.textContent('#matrix-preview')).includes('2'));
+  await p.click('#modal-form button[type=submit]');
+  const progs = (await state()).programs.filter((x) => ['TST', 'TSS'].includes(x.code));
+  const tst = progs.find((x) => x.code === 'TST');
+  ok('programs carry code, client revenue, term prices and facilities', progs.length === 2 && tst.terms.t2 === 70000000 && tst.omzet.includes('10 – 20') && tst.facilities.includes('Business visit 2×') && progs.find((x) => x.code === 'TSS').terms.t1 === 12000000);
+  await p.click('#btn-add-lead'); await p.fill('#f-lead-name', 'Matrix Client'); await p.fill('#f-lead-phone', '081277700011');
+  await p.selectOption('#f-prog', tst.id); await p.selectOption('#f-term', 't2');
+  ok('choosing program + term sets the 12-month contract value', (await p.inputValue('#f-val')) === '840000000');
+  await p.click('#modal-form button[type=submit]');
+  await p.goto(BASE + '#leads'); await p.click('tbody tr:has-text("Matrix Client")'); await p.click('#d-won');
+  ok('Deal Won keeps the chosen term', (await p.inputValue('#f-won-term')) === 't2' && (await p.inputValue('#f-won-value')) === '840000000');
+  await p.fill('#f-won-commit', '10000000'); await p.click('#modal-form button[type=submit]');
+  await p.goto(BASE + '#clients'); await p.click('text=Matrix Client'); await p.waitForSelector('.mini-table');
+  const sched = await p.$$eval('.mini-table tbody tr', (r) => r.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
+  ok(`payment schedule: commitment + 2 payments, first reduced (${sched.length} rows)`, sched.length === 4 && sched[0].includes('10.000.000') && sched[1].includes('410.000.000') && sched[2].includes('420.000.000') && sched[3].includes('840.000.000'));
+  await p.click('[data-close-drawer]');
+
   // BD sees only own compensation
   await p.click('#btn-logout'); await p.waitForSelector('[data-demo]');
   await p.click('[data-demo]:has-text("BD")'); await p.waitForSelector('.kpis');

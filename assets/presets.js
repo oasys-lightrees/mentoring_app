@@ -39,16 +39,18 @@
         waTemplate: 'Hi {name}, a quick reminder of your {type} with {mentor} on {date} at {time} WIB. See you there! — {brand}'
       },
       accounts: [
-        { id: 'u-owner', name: 'AlphaLeaders Owner', email: 'owner@alphaleaders.id', role: 'superadmin' },
-        { id: 'u-lisa', name: 'Lisa', email: 'lisa@alphaleaders.id', role: 'admin' },
-        { id: 'm-hendra', name: 'Coach Hendra', email: 'hendra@alphaleaders.id', role: 'senior' },
-        { id: 'm-sylvia', name: 'Coach Sylvia', email: 'sylvia@alphaleaders.id', role: 'mentor' },
-        { id: 'm-alvin', name: 'Coach Alvin', email: 'alvin@alphaleaders.id', role: 'mentor' },
-        { id: 'a-tika', name: 'Tika', email: 'tika@alphaleaders.id', role: 'assistant', mentorId: 'm-sylvia' },
-        { id: 'a-yoga', name: 'Yoga', email: 'yoga@alphaleaders.id', role: 'assistant', mentorId: 'm-alvin' },
-        { id: 'b-rina', name: 'Rina', email: 'rina@alphaleaders.id', role: 'bd' },
-        { id: 'b-fajar', name: 'Fajar', email: 'fajar@alphaleaders.id', role: 'bd' },
-        { id: 'b-maya', name: 'Maya', email: 'maya@alphaleaders.id', role: 'bd' }
+        { id: 'u-owner', name: 'Coach Ferly F Raya', email: 'ferly@alphaleaders.id', role: 'superadmin', coach: true },
+        { id: 'u-ferry', name: 'Ferry Davira', email: 'ferry@alphaleaders.id', role: 'superadmin', coach: true },
+        { id: 'u-lisa', name: 'Tami', email: 'tami@alphaleaders.id', role: 'admin' },
+        { id: 'u-anita', name: 'Anita', email: 'anita@alphaleaders.id', role: 'admin' },
+        { id: 'm-hendra', name: 'Josshhua Abraham', email: 'josshhua@alphaleaders.id', role: 'mentor' },
+        { id: 'm-sylvia', name: 'Anthony Sihombing', email: 'anthony@alphaleaders.id', role: 'mentor' },
+        { id: 'm-alvin', name: 'Wulansari Suharto', email: 'wulansari@alphaleaders.id', role: 'mentor' },
+        { id: 'm-charles', name: 'Charles Suryana', email: 'charles@alphaleaders.id', role: 'mentor' },
+        { id: 'm-malvin', name: 'Malvin Haryanto', email: 'malvin@alphaleaders.id', role: 'mentor' },
+        { id: 'm-rizki', name: 'Rizki Esa', email: 'rizki@alphaleaders.id', role: 'mentor' },
+        { id: 'b-rina', name: 'Julia', email: 'julia@alphaleaders.id', role: 'bd' },
+        { id: 'b-fajar', name: 'Paul', email: 'paul@alphaleaders.id', role: 'bd' }
       ],
       programs: [
         { id: 'p-private', name: '1-Year Private Coaching', format: 'Private', price: 120000000, sessions: 24, months: 12 },

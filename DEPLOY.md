@@ -22,7 +22,7 @@ Browser ──► lightech.co.id/alpha/            (file statis: index.html + as
 3. Pilih fungsi **`setup`** → **Run** → setujui izin.
    - Buka **Execution log**: tercatat email `super@lightech.co.id` beserta **password sekali pakai**. Simpan di password manager.
    - ✅ Cek: Sheet sekarang punya tab `docs` dan `audit`.
-   - Lalu pilih fungsi **`setupAlphaLeaders`** → **Run**. Company AlphaLeaders langsung jadi: logo, tema hitam-emas, funnel COV → ABM → ABE, 3 program. Execution log mencatat **password sekali pakai Owner** (`owner@alphaleaders.id`).
+   - Lalu pilih fungsi **`setupAlphaLeaders`** → **Run**. Company AlphaLeaders langsung jadi: logo, tema hitam-emas, funnel COV → ABM → ABE, 3 program. Execution log mencatat **password sekali pakai** untuk kedua Owner: Coach Ferly F Raya (`ferly@alphaleaders.id`) dan Ferry Davira (`ferry@alphaleaders.id`). Anggota tim lain ditambahkan Owner di **Team & Access**.
 4. **Deploy → New deployment → Web app**
    - Execute as: **Me**
    - Who has access: **Anyone**
@@ -39,6 +39,12 @@ Paket default: link utama `lightech.co.id/alpha/` langsung membuka **login Alpha
 
 ## Langkah 3 — Ganti /alpha (5 menit)
 
+**Otomatis (1 perintah):** buat API token di cPanel → *Security → Manage API Tokens*, lalu:
+`CPANEL_HOST=lightech.co.id CPANEL_USER=<user> CPANEL_TOKEN=<token> node scripts/deploy-cpanel.mjs`
+Script ini membackup `alpha` → `alpha_backup_<tanggal>`, upload + extract zip, lalu cek situsnya live. Coba dulu dengan `--dry-run`.
+
+**Manual:**
+
 Di cPanel → **File Manager** → `public_html/`:
 1. **Backup dulu:** rename folder `alpha` → `alpha_backup_YYYYMMDD`. Jangan dihapus.
 2. Buat folder `alpha` baru, upload `lightech-alpha.zip`, lalu **Extract**.
@@ -50,7 +56,7 @@ Di cPanel → **File Manager** → `public_html/`:
 1. Di `https://lightech.co.id/alpha/#lightech` login dengan `super@lightech.co.id` + password dari langkah 1.
 2. **Lightech admins → Edit diri sendiri → ganti password.** Peringatan "default password" harus hilang.
 3. AlphaLeaders sudah dibuat oleh `setupAlphaLeaders` (langkah 1). Company lain: **Companies → + New company**.
-4. Kirim ke owner AlphaLeaders: link **`https://lightech.co.id/alpha/`** + `owner@alphaleaders.id` + password sekali pakai dari Execution log, lewat kanal privat (WA pribadi, bukan grup). Owner langsung ganti password di **Team & Access**.
+4. Kirim ke owner AlphaLeaders: link **`https://lightech.co.id/alpha/`** + `ferly@alphaleaders.id` / `ferry@alphaleaders.id` + password sekali pakai masing-masing dari Execution log, lewat kanal privat (WA pribadi, bukan grup). Owner langsung ganti password di **Team & Access**.
 5. ✅ Cek: buka link itu di jendela incognito. Yang muncul hanya brand AlphaLeaders.
 6. **Opsional: form lead publik.** Owner → Settings → *Lead capture form* → centang *Form is live*. Link `https://lightech.co.id/alpha/?form=alphaleaders` bisa dipasang di bio Instagram / landing page iklan (tambah `&src=Meta Ads` per kampanye).
 7. **Sebelum data asli masuk:**

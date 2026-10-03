@@ -83,13 +83,16 @@ function setup() {
 }
 
 // Creates the AlphaLeaders company (brand, funnel, programs, Owner account) once. Safe to run again.
-const FIRST_COMPANY = { slug: 'alphaleaders', ownerEmail: 'owner@alphaleaders.id', ownerName: 'AlphaLeaders Owner' };
+const FIRST_COMPANY = { slug: 'alphaleaders', owners: [{ id: 'u-owner', name: 'Coach Ferly F Raya', email: 'ferly@alphaleaders.id' }, { id: 'u-ferry', name: 'Ferry Davira', email: 'ferry@alphaleaders.id' }] }; // Owners who also coach; the rest of the team: Team & Access
 function setupAlphaLeaders() {
   const store = load_();
   if (metas_(store).some(function (m) { return slugOf_(m) === FIRST_COMPANY.slug; })) { Logger.log('AlphaLeaders already exists. Nothing changed.'); return; }
-  const pw = randomPassword_();
-  const owner = { id: 'u-owner', name: FIRST_COMPANY.ownerName, email: FIRST_COMPANY.ownerEmail, role: 'superadmin', active: true };
-  setPassword_(owner, pw);
+  const owners = FIRST_COMPANY.owners.map(function (o) {
+    const a = { id: o.id, name: o.name, email: o.email, role: 'superadmin', coach: true, active: true };
+    a.oneTime = randomPassword_(); setPassword_(a, a.oneTime);
+    return a;
+  });
+  const log = owners.map(function (a) { const line = 'AlphaLeaders Owner ' + a.name + ': ' + a.email + '  one-time password: ' + a.oneTime; delete a.oneTime; return line; });
   const id = 'ws-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
   const meta = {
     name: 'AlphaLeaders', slug: FIRST_COMPANY.slug, status: 'active', preset: 'alphaleaders', createdAt: new Date().toISOString(), v: 3,
@@ -117,7 +120,7 @@ function setupAlphaLeaders() {
       waTemplate: 'Hi {name}, a quick reminder of your {type} with {mentor} on {date} at {time} WIB. See you there! — {brand}',
       commission: { rate: 10, target: 0, bonus: 0 }
     },
-    accounts: [owner],
+    accounts: owners,
     programs: [
       { id: 'p-private', name: '1-Year Private Coaching', format: 'Private', price: 120000000, sessions: 24, months: 12 },
       { id: 'p-group', name: '1-Year Group Mastermind', format: 'Group', price: 36000000, sessions: 24, months: 12 },
@@ -125,8 +128,8 @@ function setupAlphaLeaders() {
     ]
   };
   writeDocs_(store, [{ op: 'set', path: 'ws/' + id, data: meta }], 'setup');
-  audit_('setup', id, 'save', 'ws/' + id, 'Created AlphaLeaders with Owner ' + FIRST_COMPANY.ownerEmail);
-  Logger.log('AlphaLeaders Owner: ' + FIRST_COMPANY.ownerEmail + '  one-time password: ' + pw + '  (sign in at <app link>#alphaleaders and change it)');
+  audit_('setup', id, 'save', 'ws/' + id, 'Created AlphaLeaders with Owners ' + owners.map(function (a) { return a.email; }).join(', '));
+  log.forEach(function (l) { Logger.log(l + '  (sign in at <app link>#alphaleaders and change it)'); });
 }
 
 // ───────────────────────────────────────────────────────── auth

@@ -628,7 +628,7 @@
     const won = st.find((s) => s.type === 'won'), lost = st.find((s) => s.type === 'lost');
     const owners = d.accounts.filter((a) => a.role === 'bd');
     const ownerPool = owners.length ? owners : d.accounts.filter((a) => ['admin', 'assistant', 'superadmin'].includes(a.role));
-    const mentors = d.accounts.filter((a) => ['mentor', 'senior'].includes(a.role));
+    const mentors = d.accounts.filter((a) => ['mentor', 'senior'].includes(a.role) || a.coach);
     const mentorPool = mentors.length ? mentors : d.accounts;
     const asstOf = (mid) => (d.accounts.find((a) => a.role === 'assistant' && a.mentorId === mid) || {}).id || '';
     const now = Date.now();
@@ -748,6 +748,24 @@
     return (acc(id) || {}).name || '—';
   };
   const program = (id) => S.programs.find((p) => p.id === id);
+  // Investment matrix: a program can be priced per month for three payment terms over a 12-month contract.
+  const TERMS = () => [['t4', tr('Term 4× · every 3 months', 'Term 4× · tiap 3 bulan'), 4], ['t2', tr('Term 2× · every 6 months', 'Term 2× · tiap 6 bulan'), 2], ['t1', tr('Term 1× · paid upfront', 'Term 1× · lunas di depan'), 1]];
+  const hasTerms = (p) => !!(p && p.terms && (p.terms.t4 || p.terms.t2 || p.terms.t1));
+  const firstTerm = (p) => (hasTerms(p) ? ['t4', 't2', 't1'].find((t) => p.terms[t]) : '');
+  const contractValue = (p, term) => {
+    if (!p) return 0;
+    if (hasTerms(p)) { const t = p.terms[term] ? term : firstTerm(p); return (Number(p.terms[t]) || 0) * (Number(p.months) || 12); }
+    return Number(p.price) || 0;
+  };
+  const termLabel = (t) => (TERMS().find((x) => x[0] === t) || [, '—'])[1];
+  const termOptions = (p, sel) => TERMS().filter(([t]) => p.terms[t]).map(([t, label]) => `<option value="${t}" ${t === sel ? 'selected' : ''}>${esc(label)} · ${esc(fmtMoneyShort(p.terms[t]))}/${tr('mo', 'bln')} · ${tr('total', 'total')} ${esc(fmtMoneyShort(contractValue(p, t)))}</option>`).join('');
+  // Payment schedule: the total split into n equal payments, n per year; a commitment paid at the ABM session comes off the first one.
+  function paymentSchedule(total, n, startISO, commitment) {
+    const out = []; const per = Math.round(total / n); const pay = Math.min(Number(commitment) || 0, per);
+    if (pay) out.push({ label: tr('Commitment (ABM session)', 'Commitment (sesi ABM)'), due: '', amount: pay });
+    for (let k = 0; k < n; k++) out.push({ label: String(k + 1), due: startISO ? addMonths(startISO, (12 / n) * k) : '', amount: (k === n - 1 ? total - per * (n - 1) : per) - (k === 0 ? pay : 0) });
+    return out;
+  }
   const stype = (id) => S.config.sessionTypes.find((t) => t.id === id) || { id, name: id || '—', color: '#94a3b8', duration: 0, stageId: '' };
   const lead = (id) => S.leads.find((l) => l.id === id);
   const client = (id) => S.clients.find((c) => c.id === id);
@@ -756,7 +774,8 @@
   const isWon = (l) => stage(l.stageId).type === 'won';
   const isLost = (l) => stage(l.stageId).type === 'lost';
   const stageEnteredAt = (l) => { for (let i = l.history.length - 1; i >= 0; i--) if (l.history[i].to === l.stageId) return l.history[i].at; return l.createdAt; };
-  const mentorsList = () => S.accounts.filter((a) => ['senior', 'mentor'].includes(a.role) && a.active !== false);
+  // Coaches: senior/mentor roles, plus Owners/Admins who also coach (e.g. founders) — they keep their full access.
+  const mentorsList = () => S.accounts.filter((a) => a.active !== false && (['senior', 'mentor'].includes(a.role) || (a.coach && ['superadmin', 'admin'].includes(a.role))));
   const staffList = () => S.accounts.filter((a) => a.role !== 'client' && a.active !== false);
   const ownersList = () => {
     const order = { bd: 0, admin: 1, assistant: 2, senior: 3, superadmin: 4, mentor: 5 };
@@ -896,7 +915,9 @@
         <div class="grid-2">
           <label class="field"><span>${esc(L('program'))}</span>
             <select name="programId" id="f-won-prog">${options(S.programs, l.programId, (p) => p.id, (p) => p.name, '—')}</select></label>
-          <label class="field"><span>${tr('Deal value (Rp) *', 'Nilai deal (Rp) *')}</span><input name="value" id="f-won-value" type="number" min="0" step="1000" required value="${esc(l.value || '')}"></label>
+          <label class="field" id="f-won-term-wrap" ${hasTerms(program(l.programId)) ? '' : 'hidden'}><span>${tr('Payment term', 'Term pembayaran')}</span><select name="term" id="f-won-term">${hasTerms(program(l.programId)) ? termOptions(program(l.programId), l.term || firstTerm(program(l.programId))) : ''}</select></label>
+          <label class="field"><span>${tr('Contract value (Rp) *', 'Nilai kontrak (Rp) *')}</span><input name="value" id="f-won-value" type="number" min="0" step="1000" required value="${esc(l.value || '')}"></label>
+          <label class="field"><span>${tr('Commitment paid today (Rp)', 'Commitment payment hari ini (Rp)')}</span><input name="commitment" id="f-won-commit" type="number" min="0" step="1000" value="${esc(l.commitment || '')}" placeholder="${esc(tr('Paid at the ABM session', 'Dibayar di sesi ABM'))}"></label>
           ${existing ? '' : `
           <label class="field"><span>${esc(tr(`Assigned ${L('mentor')}`, `${L('mentor')} pendamping`))}</span>
             <select name="coachId" id="f-won-coach">${options(mentorsList(), lastMentor || (mentorsList()[0] || {}).id, (m) => m.id, (m) => m.name)}</select></label>
@@ -907,6 +928,8 @@
         ${modalFoot(tr('Confirm deal', 'Konfirmasi deal'), 'btn-ok')}`,
       (fd) => {
         l.programId = fd.get('programId') || l.programId;
+        l.term = fd.get('term') || '';
+        l.commitment = Number(fd.get('commitment')) || 0;
         l.value = Number(fd.get('value')) || 0;
         l.nextAction = ''; l.nextActionDate = '';
         moveStage(l, toId, fd.get('note') || 'Deal closed');
@@ -917,13 +940,21 @@
             id: uid('C'), leadId: l.id, name: l.name, company: l.company || '', phone: l.phone || '', email: l.email || '',
             programId: l.programId || '', coachId, assistantId: (assistantOf(coachId) || {}).id || '',
             startDate: fd.get('startDate') || todayISO(), months: p.months || 12, totalSessions: p.sessions || 12,
-            value: l.value, status: 'active', notes: '', createdAt: new Date().toISOString()
+            value: l.value, term: l.term, commitment: l.commitment, status: 'active', notes: '', createdAt: new Date().toISOString()
           });
           save();
         }
         toast(tr(`Closed ${fmtMoneyShort(l.value)}! ${l.name} is now an active ${L('client')}`, `Closing ${fmtMoneyShort(l.value)}! ${l.name} jadi ${L('client')} aktif`));
         after && after();
       });
+      const syncWon = () => {
+        const p = program($('#f-won-prog').value);
+        $('#f-won-term-wrap').hidden = !hasTerms(p);
+        if (hasTerms(p)) { const keep = $('#f-won-term').value; $('#f-won-term').innerHTML = termOptions(p, p.terms[keep] ? keep : firstTerm(p)); }
+        if (p) $('#f-won-value').value = contractValue(p, $('#f-won-term').value);
+      };
+      $('#f-won-prog').onchange = syncWon; $('#f-won-term').onchange = syncWon;
+      if (!l.value && program(l.programId)) syncWon();
       return;
     }
     moveStage(l, toId);
@@ -1825,7 +1856,7 @@
     const rows = S.accounts.slice().sort((a, b) => window.ROLE_KEYS.indexOf(a.role) - window.ROLE_KEYS.indexOf(b.role) || a.name.localeCompare(b.name));
     const counts = (a) => {
       if (a.role === 'bd') { const n = S.leads.filter((l) => l.ownerId === a.id && isOpen(l)).length; return tr(`${n} open ${L('leads')}`, `${n} ${L('leads')} aktif`); }
-      if (['mentor', 'senior'].includes(a.role)) { const n = S.clients.filter((c) => c.coachId === a.id && c.status === 'active').length; return tr(`${n} active ${L('clients')}`, `${n} ${L('clients')} aktif`); }
+      if (['mentor', 'senior'].includes(a.role) || a.coach) { const n = S.clients.filter((c) => c.coachId === a.id && c.status === 'active').length; return (a.coach ? L('mentor') + ' · ' : '') + tr(`${n} active ${L('clients')}`, `${n} ${L('clients')} aktif`); }
       if (a.role === 'assistant') return tr(`assists ${accName(a.mentorId)}`, `asisten ${accName(a.mentorId)}`);
       if (a.role === 'client') return tr('portal access', 'akses portal');
       return '';
@@ -1869,6 +1900,7 @@
         <label class="field"><span>${tr('Phone', 'No. HP')}</span><input name="phone" id="f-acc-phone" value="${esc(d.phone || '')}"></label>
         <label class="field"><span>${tr('Role *', 'Peran *')}</span><select name="role" id="f-acc-role">${options(roleChoices, d.role, (r) => r, roleName)}</select></label>
         <label class="field" id="f-acc-mentor-wrap"><span>${esc(tr(`Assistant to ${L('mentor')}`, `Asisten untuk ${L('mentor')}`))}</span><select name="mentorId" id="f-acc-mentor">${options(mentorsList(), d.mentorId, (m) => m.id, (m) => m.name, '—')}</select></label>
+        <label class="check" id="f-acc-coach-wrap" style="align-self:end"><input type="checkbox" name="coach" id="f-acc-coach" ${d.coach ? 'checked' : ''}> ${esc(tr(`Also works as ${L('mentor')}`, `Juga sebagai ${L('mentor')}`))}</label>
         <label class="field" id="f-acc-client-wrap"><span>${esc(tr(`Linked ${L('client')}`, `Terhubung ke ${L('client')}`))}</span><select name="clientId" id="f-acc-client">${options(S.clients, d.clientId, (c) => c.id, (c) => c.name, '—')}</select></label>
         <label class="field"><span>${isNew ? 'Password *' : tr('New password', 'Password baru')}</span><input name="password" id="f-acc-pw" type="text" ${isNew ? 'required' : ''} placeholder="${esc(isNew ? tr('At least 4 characters', 'Min. 4 karakter') : tr('Leave empty to keep', 'Kosongkan jika tidak diganti'))}"></label>
         <label class="field"><span>Status</span><select name="active" id="f-acc-active">${options([['1', tr('Active', 'Aktif')], ['0', tr('Inactive', 'Nonaktif')]], d.active === false ? '0' : '1', (x) => x[0], (x) => x[1])}</select></label>
@@ -1882,14 +1914,14 @@
       if (v.password && v.password.length < 4) { toast(tr('Password needs at least 4 characters', 'Password minimal 4 karakter')); return false; }
       if (!isNew && d.id === me.id && v.active === '0') { toast(tr('You cannot deactivate your own account', 'Tidak bisa menonaktifkan akun sendiri')); return false; }
       const target = a || { id: uid('u') };
-      Object.assign(target, { name: v.name.trim(), email, phone: v.phone, role: v.role, active: v.active !== '0', mentorId: v.role === 'assistant' ? v.mentorId : '', clientId: v.role === 'client' ? v.clientId : '' });
+      Object.assign(target, { name: v.name.trim(), email, phone: v.phone, role: v.role, coach: !!v.coach && ['superadmin', 'admin'].includes(v.role), active: v.active !== '0', mentorId: v.role === 'assistant' ? v.mentorId : '', clientId: v.role === 'client' ? v.clientId : '' });
       if (v.password) setPassword(target, v.password);
       if (isNew) S.accounts.push(target);
       if (target.role === 'client' && target.clientId) { const c = client(target.clientId); if (c) c.accountId = target.id; }
       save(); toast(isNew ? tr(`Account for ${target.name} created`, `Akun ${target.name} dibuat`) : tr('Account saved', 'Akun disimpan'));
       renderMain();
     });
-    const sync = () => { const r = $('#f-acc-role').value; $('#f-acc-mentor-wrap').hidden = r !== 'assistant'; $('#f-acc-client-wrap').hidden = r !== 'client'; };
+    const sync = () => { const r = $('#f-acc-role').value; $('#f-acc-mentor-wrap').hidden = r !== 'assistant'; $('#f-acc-client-wrap').hidden = r !== 'client'; $('#f-acc-coach-wrap').hidden = !['superadmin', 'admin'].includes(r); };
     $('#f-acc-role').onchange = sync; sync();
     const del = $('#acc-del');
     if (del) del.onclick = () => {
@@ -1961,15 +1993,19 @@
             </tr>`).join('')}
           </tbody></table></div>
         </div>
-        <div class="card full">
-          <div class="card-head"><div class="card-title">${esc(L('programs'))}</div><button class="btn btn-sm" type="button" id="add-program">+ ${esc(L('program'))}</button></div>
-          <div class="table-wrap"><table class="edit-table"><thead><tr><th>${tr('Name', 'Nama')}</th><th>Format</th><th>${tr('Price (Rp)', 'Harga (Rp)')}</th><th>${tr('Sessions', 'Jumlah sesi')}</th><th>${tr('Months', 'Bulan')}</th><th></th></tr></thead><tbody>
+        <div class="card full" id="set-programs">
+          <div class="card-head"><div><div class="card-title">${esc(L('programs'))} · Investment Matrix</div><div class="hint">${tr('Monthly investment per payment term over a 12-month contract. Deal values follow the term chosen. Leave the terms empty to use one contract price.', 'Investasi per bulan per term pembayaran, kontrak 12 bulan. Nilai deal mengikuti term yang dipilih. Kosongkan term untuk memakai satu harga kontrak.')}</div></div>
+            <div class="row"><button class="btn btn-sm" type="button" id="paste-matrix">${tr('Paste from Excel', 'Paste dari Excel')}</button><button class="btn btn-sm" type="button" id="add-program">+ ${esc(L('program'))}</button></div></div>
+          <div class="table-wrap"><table class="edit-table"><thead><tr><th>${tr('Name', 'Nama')}</th><th>${tr('Code', 'Kode')}</th><th>${tr('Client revenue', 'Omzet klien')}</th><th>${tr('Term 4× / mo', 'Term 4× / bln')}</th><th>${tr('Term 2× / mo', 'Term 2× / bln')}</th><th>${tr('Term 1× / mo', 'Term 1× / bln')}</th><th>${tr('Contract price', 'Harga kontrak')}</th><th>${tr('Sessions', 'Sesi')}</th><th>${tr('Months', 'Bulan')}</th><th>${tr('Facilities', 'Fasilitas')}</th><th></th></tr></thead><tbody>
             ${S.programs.map((p, i) => `<tr>
-              <td><input id="pr-name-${i}" data-program="${i}" data-k="name" value="${esc(p.name)}" style="min-width:180px"></td>
-              <td><select id="pr-format-${i}" data-program="${i}" data-k="format">${options(['Private', 'Group', 'Online', 'Hybrid'], p.format, (x) => x, (x) => x)}</select></td>
-              <td><input id="pr-price-${i}" type="number" min="0" step="1000" data-program="${i}" data-k="price" value="${esc(p.price)}" style="width:130px"></td>
-              <td><input id="pr-sess-${i}" type="number" min="0" data-program="${i}" data-k="sessions" value="${esc(p.sessions)}" style="width:80px"></td>
-              <td><input id="pr-months-${i}" type="number" min="0" data-program="${i}" data-k="months" value="${esc(p.months)}" style="width:80px"></td>
+              <td><input id="pr-name-${i}" data-program="${i}" data-k="name" value="${esc(p.name)}" style="min-width:170px"></td>
+              <td><input id="pr-code-${i}" data-program="${i}" data-k="code" value="${esc(p.code || '')}" style="width:70px"></td>
+              <td><input id="pr-omzet-${i}" data-program="${i}" data-k="omzet" value="${esc(p.omzet || '')}" style="min-width:150px"></td>
+              ${['t4', 't2', 't1'].map((t) => `<td><input id="pr-${t}-${i}" type="number" min="0" step="1000" data-term-prog="${i}" data-term="${t}" value="${esc((p.terms || {})[t] || '')}" style="width:120px"></td>`).join('')}
+              <td>${hasTerms(p) ? `<span class="small muted nowrap">${esc(fmtMoneyShort(contractValue(p, 't1')))} – ${esc(fmtMoneyShort(contractValue(p, 't4')))}</span>` : `<input id="pr-price-${i}" type="number" min="0" step="1000" data-program="${i}" data-k="price" value="${esc(p.price)}" style="width:120px">`}</td>
+              <td><input id="pr-sess-${i}" type="number" min="0" data-program="${i}" data-k="sessions" value="${esc(p.sessions)}" style="width:64px"></td>
+              <td><input id="pr-months-${i}" type="number" min="0" data-program="${i}" data-k="months" value="${esc(p.months)}" style="width:64px"></td>
+              <td><input id="pr-fac-${i}" data-program="${i}" data-k="facilities" value="${esc(p.facilities || '')}" style="min-width:200px" placeholder="${esc(tr('e.g. Team max 8 pax · 2× business visit', 'mis. Team maks 8 pax · 2× business visit'))}"></td>
               <td><button class="btn btn-sm btn-danger" type="button" data-program-del="${i}" aria-label="Delete">✕</button></td></tr>`).join('')}
           </tbody></table></div>
         </div>
@@ -2043,6 +2079,13 @@
       if (S.sessions.some((s) => s.typeId === t.id)) { toast(tr('This type is already used in the schedule', 'Jenis ini sudah dipakai di jadwal')); return; }
       c.sessionTypes.splice(Number(b.dataset.stypeDel), 1); save(); renderSettings();
     });
+    $$('[data-term-prog]').forEach((el) => el.onchange = () => {
+      const pr = S.programs[Number(el.dataset.termProg)]; pr.terms = pr.terms || {};
+      const v = Math.max(0, Number(el.value) || 0); if (v) pr.terms[el.dataset.term] = v; else delete pr.terms[el.dataset.term];
+      if (hasTerms(pr)) pr.price = contractValue(pr, firstTerm(pr));
+      save(); renderSettings(); toast(tr('Saved', 'Tersimpan'));
+    });
+    $('#paste-matrix').onclick = matrixImportForm;
     $('#add-program').onclick = () => { S.programs.push({ id: uid('p'), name: tr(`New ${L('program')}`, `${L('program')} baru`), format: 'Private', price: 0, sessions: 12, months: 12 }); save(); renderSettings(); };
     $$('[data-program-del]').forEach((b) => b.onclick = () => { S.programs.splice(Number(b.dataset.programDel), 1); save(); renderSettings(); });
     $('#exp-json').onclick = () => download(`${slugify(c.brandName)}-backup-${todayISO()}.json`, JSON.stringify(S, null, 2), 'application/json');
@@ -2190,6 +2233,19 @@
     </div>`).join('') || `<div class="empty">${tr('Nothing yet.', 'Belum ada.')}</div>`}</div>`;
   }
 
+  function investmentSection(c, prog) {
+    const term = c.term || (lead(c.leadId) || {}).term || '';
+    const n = { t4: 4, t2: 2, t1: 1 }[term];
+    if (!n || !c.value) return '';
+    const rows = paymentSchedule(Number(c.value) || 0, n, c.startDate, c.commitment);
+    return `<div class="drawer-section">
+      <h4>${tr('Investment & payments', 'Investasi & pembayaran')}</h4>
+      <div class="small muted">${esc(termLabel(term))}${hasTerms(prog) && prog.terms[term] ? ' · ' + esc(fmtMoney(prog.terms[term])) + tr(' / month', ' / bulan') : ''}${prog && prog.facilities ? ' · ' + esc(prog.facilities) : ''}</div>
+      <table class="mini-table mt"><thead><tr><th>${tr('Payment', 'Pembayaran')}</th><th>${tr('Due', 'Jatuh tempo')}</th><th class="right">${tr('Amount', 'Nominal')}</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td>${esc(r.label)}</td><td>${r.due ? esc(fmtDate(r.due)) : esc(tr('at signing', 'saat closing'))}</td><td class="right nowrap">${esc(fmtMoney(r.amount))}</td></tr>`).join('')}
+      <tr class="total-row"><td colspan="2"><b>Total</b></td><td class="right nowrap"><b>${esc(fmtMoney(c.value))}</b></td></tr></tbody></table>
+    </div>`;
+  }
   function openClient(id) {
     const c = client(id);
     if (!c) return;
@@ -2228,6 +2284,7 @@
           ${p.idle ? `<div class="warn-text mt">${esc(tr(`No ${L('session')} completed in 30 days. Churn risk, book the next one.`, `Tidak ada ${L('session')} selesai dalam 30 hari. Risiko churn, jadwalkan ulang.`))}</div>` : ''}
           ${c.notes ? `<div class="note-box mt">${esc(c.notes)}</div>` : ''}
         </div>
+        ${investmentSection(c, prog)}
         <div class="drawer-section">
           <h4>${tr('Open action items', 'Action items terbuka')} (${p.openActions.length})</h4>
           <div class="actions-list">${p.openActions.map((x) => `<label class="action-item"><input type="checkbox" data-action-toggle="${esc(x.s.id)}|${x.i}" ${can.editSession() ? '' : 'disabled'}><span>${esc(x.a.text)} <span class="tiny muted">· ${esc(fmtShortDate(x.s.date))}</span></span></label>`).join('') || `<div class="empty">${tr('None.', 'Tidak ada.')}</div>`}</div>
@@ -2270,7 +2327,8 @@
         <label class="field"><span>Email</span><input name="email" id="f-lead-email" type="email" value="${esc(d.email || '')}"></label>
         <label class="field"><span>${tr('Source', 'Sumber')}</span><select name="source" id="f-lead-source">${options(S.config.sources, d.source, (x) => x, (x) => x)}</select></label>
         <label class="field"><span>${esc(L('owner'))} (PIC)</span><select name="ownerId" id="f-lead-owner" ${R() === 'bd' ? 'disabled' : ''}>${options(ownersList(), d.ownerId, (m) => m.id, (m) => m.name + ' · ' + roleName(m.role))}</select></label>
-        <label class="field"><span>${esc(tr(`${L('program')} of interest`, `${L('program')} diminati`))}</span><select name="programId" id="f-prog">${options(S.programs, d.programId, (p) => p.id, (p) => `${p.name} (${fmtMoneyShort(p.price)})`, tr('— not sure yet —', '— belum tahu —'))}</select></label>
+        <label class="field"><span>${esc(tr(`${L('program')} of interest`, `${L('program')} diminati`))}</span><select name="programId" id="f-prog">${options(S.programs, d.programId, (p) => p.id, (p) => (hasTerms(p) ? `${p.name}${p.omzet ? ' · ' + p.omzet : ''}` : `${p.name} (${fmtMoneyShort(p.price)})`), tr('— not sure yet —', '— belum tahu —'))}</select></label>
+        <label class="field" id="f-term-wrap" ${hasTerms(program(d.programId)) ? '' : 'hidden'}><span>${tr('Payment term', 'Term pembayaran')}</span><select name="term" id="f-term">${hasTerms(program(d.programId)) ? termOptions(program(d.programId), d.term || firstTerm(program(d.programId))) : ''}</select></label>
         <label class="field"><span>${tr('Estimated value (Rp)', 'Estimasi nilai (Rp)')}</span><input name="value" id="f-val" type="number" min="0" step="1000" value="${esc(d.value ?? '')}"></label>
         ${isNew ? `<label class="field"><span>${tr('Starting stage', 'Stage awal')}</span><select name="stageId" id="f-lead-stage">${options(openStages(), d.stageId, (s) => s.id, (s) => s.name)}</select></label>` : ''}
         <label class="field"><span>Next action</span><input name="nextAction" id="f-lead-na" value="${esc(d.nextAction || (isNew ? tr('WhatsApp follow-up', 'Follow up WA') : ''))}"></label>
@@ -2283,17 +2341,24 @@
       const ownerId = R() === 'bd' ? me.id : v.ownerId;
       const nowIso = new Date().toISOString();
       if (isNew) {
-        const nl = { id: uid('L'), name: v.name.trim(), company: v.company, phone: v.phone, email: v.email, source: v.source, ownerId, programId: v.programId, value: Number(v.value) || 0, stageId: v.stageId, nextAction: v.nextAction, nextActionDate: v.nextActionDate, notes: v.notes, createdAt: nowIso, updatedAt: nowIso, createdBy: me.id, history: [{ at: nowIso, from: null, to: v.stageId, note: 'Lead created', by: me.id }] };
+        const nl = { id: uid('L'), name: v.name.trim(), company: v.company, phone: v.phone, email: v.email, source: v.source, ownerId, programId: v.programId, term: v.term || '', value: Number(v.value) || 0, stageId: v.stageId, nextAction: v.nextAction, nextActionDate: v.nextActionDate, notes: v.notes, createdAt: nowIso, updatedAt: nowIso, createdBy: me.id, history: [{ at: nowIso, from: null, to: v.stageId, note: 'Lead created', by: me.id }] };
         S.leads.unshift(nl);
         save(); toast(tr(`${nl.name} added to the pipeline`, `${nl.name} masuk pipeline`));
       } else {
-        Object.assign(l, { name: v.name.trim(), company: v.company, phone: v.phone, email: v.email, source: v.source, ownerId, programId: v.programId, value: Number(v.value) || 0, nextAction: v.nextAction, nextActionDate: v.nextActionDate, notes: v.notes, updatedAt: nowIso });
+        Object.assign(l, { name: v.name.trim(), company: v.company, phone: v.phone, email: v.email, source: v.source, ownerId, programId: v.programId, term: v.term || '', value: Number(v.value) || 0, nextAction: v.nextAction, nextActionDate: v.nextActionDate, notes: v.notes, updatedAt: nowIso });
         save(); toast(tr('Saved', 'Tersimpan'));
       }
       renderMain(); after && after();
     });
     const val = $('#f-val');
-    $('#f-prog').onchange = (e) => { const p = program(e.target.value); if (p) val.value = p.price; };
+    const syncTerm = () => {
+      const p = program($('#f-prog').value);
+      $('#f-term-wrap').hidden = !hasTerms(p);
+      if (hasTerms(p)) { const keep = $('#f-term').value; $('#f-term').innerHTML = termOptions(p, p.terms[keep] ? keep : firstTerm(p)); }
+      if (p) val.value = contractValue(p, $('#f-term').value);
+    };
+    $('#f-prog').onchange = syncTerm;
+    $('#f-term').onchange = syncTerm;
     $('#f-lead-phone').oninput = (e) => {
       const n = waNumber(e.target.value);
       const dup = n.length > 6 && S.leads.find((x) => x !== l && waNumber(x.phone) === n);
@@ -2367,6 +2432,9 @@
         <label class="field"><span>WhatsApp</span><input name="phone" id="f-cl-phone" value="${esc(c.phone || '')}"></label>
         <label class="field"><span>Email</span><input name="email" id="f-cl-email" type="email" value="${esc(c.email || '')}"></label>
         <label class="field"><span>${esc(L('program'))}</span><select name="programId" id="f-cl-prog">${options(S.programs, c.programId, (p) => p.id, (p) => p.name, '—')}</select></label>
+        <label class="field"><span>${tr('Payment term', 'Term pembayaran')}</span><select name="term" id="f-cl-term">${options(TERMS(), c.term || '', (t) => t[0], (t) => t[1], '—')}</select></label>
+        <label class="field"><span>${tr('Contract value (Rp)', 'Nilai kontrak (Rp)')}</span><input name="value" id="f-cl-value" type="number" min="0" step="1000" value="${esc(c.value || '')}"></label>
+        <label class="field"><span>${tr('Commitment paid (Rp)', 'Commitment payment (Rp)')}</span><input name="commitment" id="f-cl-commit" type="number" min="0" step="1000" value="${esc(c.commitment || '')}"></label>
         <label class="field"><span>Status</span><select name="status" id="f-cl-status">${options(Object.entries(cs), c.status, (x) => x[0], (x) => x[1][0])}</select></label>
         <label class="field"><span>${esc(L('mentor'))}</span><select name="coachId" id="f-cl-coach">${options(mentorsList(), c.coachId, (m) => m.id, (m) => m.name, '—')}</select><div class="hint" id="f-cl-asst"></div></label>
         <label class="field"><span>${tr('Program start', 'Mulai program')}</span><input name="startDate" id="f-cl-start" type="date" value="${esc(c.startDate || '')}"></label>
@@ -2377,7 +2445,7 @@
       ${modalFoot(tr('Save', 'Simpan'))}`,
     (fd) => {
       const v = Object.fromEntries(fd.entries());
-      Object.assign(c, { name: v.name.trim(), company: v.company, phone: v.phone, email: v.email, programId: v.programId, status: v.status, coachId: v.coachId, assistantId: (assistantOf(v.coachId) || {}).id || '', startDate: v.startDate, months: Number(v.months) || 12, totalSessions: Number(v.totalSessions) || 0, notes: v.notes });
+      Object.assign(c, { name: v.name.trim(), company: v.company, phone: v.phone, email: v.email, programId: v.programId, term: v.term || '', value: Number(v.value) || 0, commitment: Number(v.commitment) || 0, status: v.status, coachId: v.coachId, assistantId: (assistantOf(v.coachId) || {}).id || '', startDate: v.startDate, months: Number(v.months) || 12, totalSessions: Number(v.totalSessions) || 0, notes: v.notes });
       save(); toast(tr('Saved', 'Tersimpan')); refreshAll();
     });
     const showAsst = () => { const a = assistantOf($('#f-cl-coach').value); $('#f-cl-asst').textContent = a ? tr(`Assistant: ${a.name}`, `Asisten: ${a.name}`) : ''; };
@@ -2600,6 +2668,52 @@
       known.add(n); out.ok.push(rec);
     });
     return out;
+  }
+  // Paste the Investment Matrix rows from Excel: Program | Code | Client revenue | Term 4× | Term 2× | Term 1× | (12-month totals) | Participants | Visit | Training | Inner circle.
+  function parseMatrix(text) {
+    const num = (x) => Number(String(x || '').replace(/[^0-9]/g, '')) || 0;
+    const out = [];
+    String(text || '').split(/\r?\n/).forEach((line) => {
+      const cells = line.split('\t').map((c) => c.trim());
+      while (cells.length && !cells[0]) cells.shift();
+      if (cells.length < 6) return;
+      const [name, code, omzet] = cells;
+      if (!name || !/^[A-Za-z0-9]{2,6}$/.test(code)) return;
+      const tail = cells.slice(3);
+      let lastNum = -1; const nums = [];
+      tail.forEach((c, i) => { if (num(c) >= 100000) { nums.push(num(c)); lastNum = i; } });
+      if (!nums.length) return;
+      const fac = tail.slice(lastNum + 1).filter((c) => c);
+      const labels = [tr('Participants', 'Peserta'), 'Business visit', 'Team training', 'Inner circle'];
+      const facilities = fac.map((v, i) => (v === '—' || v === '-' ? '' : i === 0 ? v : `${labels[i] || ''} ${v}`.trim())).filter(Boolean).join(' · ');
+      out.push({ name, code: code.toUpperCase(), omzet, terms: { t4: nums[0] || 0, t2: nums[1] || 0, t1: nums[2] || 0 }, facilities });
+    });
+    return out;
+  }
+  function matrixImportForm() {
+    let rows = [];
+    openModal(tr('Paste Investment Matrix', 'Paste Investment Matrix'), `
+      <div class="hint">${tr('In Excel select the program rows (from Program to Inner Circle), copy, and paste here. Programs are matched by code; new codes are added. Prices stay inside your workspace.', 'Di Excel pilih baris program (kolom Program sampai Inner Circle), copy, lalu paste di sini. Program dicocokkan lewat kode; kode baru ditambahkan. Harga hanya tersimpan di workspace Anda.')}</div>
+      <label class="field mt"><span>${tr('Rows from Excel', 'Baris dari Excel')}</span><textarea id="f-matrix" rows="8" placeholder="ALPHA Elite™	FRD	Rp 10 – 20 M / bulan	…"></textarea></label>
+      <div class="small mt" id="matrix-preview"></div>
+      ${modalFoot(tr('Update programs', 'Perbarui program'))}`,
+    () => {
+      if (!rows.length) { toast(tr('No program rows recognised yet', 'Belum ada baris program yang dikenali')); return false; }
+      let added = 0, updated = 0;
+      rows.forEach((r) => {
+        const cur = S.programs.find((p) => (p.code && p.code.toUpperCase() === r.code) || p.name.toLowerCase() === r.name.toLowerCase());
+        const months = (cur && cur.months) || 12;
+        const next = Object.assign(cur || { id: 'p-' + r.code.toLowerCase(), format: 'Private', sessions: 24 }, { name: r.name, code: r.code, omzet: r.omzet, terms: r.terms, facilities: r.facilities, months });
+        next.price = contractValue(next, firstTerm(next));
+        if (cur) updated++; else { S.programs.push(next); added++; }
+      });
+      save(); renderSettings();
+      toast(tr(`${updated} updated, ${added} added`, `${updated} diperbarui, ${added} ditambahkan`));
+    });
+    $('#f-matrix').oninput = () => {
+      rows = parseMatrix($('#f-matrix').value);
+      $('#matrix-preview').innerHTML = rows.length ? `<b>${rows.length}</b> ${esc(tr('programs recognised', 'program dikenali'))}: ${rows.map((r) => esc(r.name)).join(', ')}` : '';
+    };
   }
   function importForm() {
     let parsed = null;

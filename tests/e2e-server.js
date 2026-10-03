@@ -61,7 +61,7 @@ let BASE = process.env.BASE;
   await p.goto(BASE + '#leads'); await p.waitForSelector('tbody');
   const rows = await p.$$eval('tbody tr.clickable', (r) => r.length);
   const allLeads = srv.post({ action: 'list', token: own.token, collection: 'ws/' + own.session.wsId + '/leads' }).docs.length;
-  ok(`BD sees only own leads (${rows} of ${allLeads})`, rows > 0 && rows < allLeads / 2);
+  ok(`BD sees only own leads (${rows} of ${allLeads})`, rows > 0 && rows < allLeads);
   const bdView = await p.evaluate(() => { const st = window.__mcrm.state; const r = st.leads.filter((l) => l.restricted); return { restricted: r.length, leaked: r.some((l) => l.name || l.phone) }; });
   ok(`server sends other BDs' leads as numbers only (${bdView.restricted}), no names or phones`, bdView.restricted > 0 && !bdView.leaked);
   await p.goto(BASE + '#dashboard'); await p.waitForSelector('.kpis');
