@@ -189,4 +189,33 @@ const ferryPw = (fresh.logs.find((l) => l.includes('ferry@alphaleaders.id')) || 
 const fy = fresh.post({ action: 'login', email: 'ferry@alphaleaders.id', password: ferryPw, slug: 'alphaleaders' });
 assert.ok(fo.ok && fy.ok && fo.session.role === 'superadmin' && fy.session.role === 'superadmin' && ownerPw !== ferryPw); ok('both AlphaLeaders Owners (Ferly, Ferry) sign in with their own one-time passwords');
 assert.strictEqual(fresh.post({ action: 'login', email: 'ferly@alphaleaders.id', password: 'demo', slug: 'alphaleaders' }).ok, false); ok('no default password on the production company');
+const pwOf = (srvX, email) => (srvX.logs.find((l) => l.includes(email)) || '').match(/one-time password: (\S+)/)[1];
+assert.strictEqual(fresh.logs.filter((l) => l.includes('one-time password') && l.includes('@alphaleaders.id')).length, 12); ok('setupAlphaLeaders creates the whole team (12 people), each with their own one-time password');
+const julia = fresh.post({ action: 'login', email: 'julia@alphaleaders.id', password: pwOf(fresh, 'julia@'), slug: 'alphaleaders' });
+assert.ok(julia.ok && julia.session.role === 'bd'); ok('team members sign in with their one-time password');
+let jm = fresh.post({ action: 'get', token: julia.token, path: 'ws/' + julia.session.wsId }).data.accounts.find((a) => a.email === 'julia@alphaleaders.id');
+assert.ok(jm.mustChange); ok('first sign-in is flagged: a new password is required');
+assert.strictEqual(fresh.post({ action: 'password', token: julia.token, oldPassword: 'wrong', newPassword: 'julia-secret-1' }).error, 'invalid'); ok('changing a password needs the current one');
+assert.strictEqual(fresh.post({ action: 'password', token: julia.token, oldPassword: pwOf(fresh, 'julia@'), newPassword: 'short' }).error, 'invalid'); ok('new passwords need at least 8 characters');
+assert.ok(fresh.post({ action: 'password', token: julia.token, oldPassword: pwOf(fresh, 'julia@'), newPassword: 'julia-secret-1' }).ok); ok('a BD changes their own password (no admin rights needed)');
+assert.ok(fresh.post({ action: 'login', email: 'julia@alphaleaders.id', password: 'julia-secret-1', slug: 'alphaleaders' }).ok && !fresh.post({ action: 'login', email: 'julia@alphaleaders.id', password: pwOf(fresh, 'julia@'), slug: 'alphaleaders' }).ok); ok('the one-time password stops working');
+// Owner saves settings with a stale copy that still says mustChange: the server keeps its own flag
+const fo2 = fresh.post({ action: 'login', email: 'ferly@alphaleaders.id', password: ownerPw, slug: 'alphaleaders' });
+const stale = fresh.post({ action: 'get', token: fo2.token, path: 'ws/' + fo2.session.wsId }).data;
+stale.accounts.find((a) => a.email === 'julia@alphaleaders.id').mustChange = true;
+assert.ok(fresh.post({ action: 'batch', token: fo2.token, ops: [{ op: 'set', path: 'ws/' + fo2.session.wsId, data: stale }] }).ok);
+jm = fresh.post({ action: 'get', token: fo2.token, path: 'ws/' + fo2.session.wsId }).data.accounts.find((a) => a.email === 'julia@alphaleaders.id');
+assert.ok(!jm.mustChange); ok('the first-sign-in flag is controlled by the server, not by a saved copy');
+const reset = fresh.post({ action: 'get', token: fo2.token, path: 'ws/' + fo2.session.wsId }).data;
+const resetAcc = reset.accounts.find((a) => a.email === 'paul@alphaleaders.id'); resetAcc.salt = 'x1'; resetAcc.pw = sha('x1:temporary-123');
+fresh.post({ action: 'batch', token: fo2.token, ops: [{ op: 'set', path: 'ws/' + fo2.session.wsId, data: reset }] });
+assert.ok(fresh.post({ action: 'get', token: fo2.token, path: 'ws/' + fo2.session.wsId }).data.accounts.find((a) => a.email === 'paul@alphaleaders.id').mustChange); ok('a password set by the Owner must be changed at next sign-in');
+
+// The web app serves the app itself
+const page = fresh.get({});
+assert.ok(page.html.includes('id="gate"') && page.html.includes('cdn.jsdelivr.net/gh/oasys-lightrees/mentoring_app@') && page.html.includes('"apiUrl":"https://script.google.com/macros/s/TEST/exec"') && page.html.includes('"defaultTenant":"alphaleaders"')); ok('GET serves the app shell with its API link and default company');
+assert.ok(page.meta.viewport && page.xframe === 'ALLOWALL' && page.title.includes('AlphaLeaders')); ok('app page is mobile-ready and embeddable');
+const formPage = fresh.get({ form: 'alphaleaders', src: 'Instagram<script>' });
+assert.ok(formPage.html.includes('"form":"alphaleaders"') && formPage.html.includes('"src":"Instagramscript"') && !formPage.html.includes('Instagram<script>')); ok('form links pass through, cleaned');
+assert.ok(JSON.parse(fresh.get({ health: '1' }).getContent()).ok); ok('?health=1 answers JSON');
 console.log(`\n${n} server checks passed`);

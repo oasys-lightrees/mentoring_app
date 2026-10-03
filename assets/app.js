@@ -980,7 +980,12 @@
   const refreshSync = () => setSync($('#sync').dataset.state || (Backend && Backend.mode === 'cloud' ? 'cloud' : 'local'));
 
   // Brand mark: the company's icon image when set, otherwise its initial.
-  const safeUrl = (u) => (/^(https:\/\/|assets\/|data:image\/)/.test(String(u || '')) ? String(u) : '');
+  // Brand images: https, data:image, or a packaged asset (resolved against assetBase when the app is served from Apps Script).
+  const safeUrl = (u) => {
+    u = String(u || '');
+    if (/^assets\//.test(u)) return ((window.MCRM_CONFIG || {}).assetBase || '') + u;
+    return /^(https:\/\/|data:image\/)/.test(u) ? u : '';
+  };
   const markHTML = (c) => (safeUrl(c.mark) ? `<img src="${esc(safeUrl(c.mark))}" alt="">` : esc(initials(c.brandName).slice(0, 1) || 'C'));
   function setTheme(c) {
     const root = document.documentElement.style;
@@ -1058,8 +1063,9 @@
     const v = currentView();
     $('#tabs').innerHTML = tabsFor().map(([k, t]) => `<a href="#${k}" data-view="${k}" class="${k === v ? 'active' : ''}">${esc(t)}</a>`).join('');
     const imp = !!me.platform;
-    $('#me-chip').innerHTML = `<span class="avatar">${esc(initials(me.name))}</span><span><div class="me-name">${esc(me.name)}</div><div class="me-role">${esc(roleName(me.role))}</div></span>${imp ? '' : `<button type="button" id="btn-logout">${tr('Sign out', 'Keluar')}</button>`}`;
+    $('#me-chip').innerHTML = `<span class="avatar">${esc(initials(me.name))}</span><span><div class="me-name">${esc(me.name)}</div><div class="me-role">${esc(roleName(me.role))}</div></span>${imp ? '' : `${Backend.serverAuth ? `<button type="button" id="btn-pw" title="${esc(tr('Change password', 'Ganti password'))}">${tr('Password', 'Password')}</button>` : ''}<button type="button" id="btn-logout">${tr('Sign out', 'Keluar')}</button>`}`;
     if ($('#btn-logout')) $('#btn-logout').onclick = logout;
+    if ($('#btn-pw')) $('#btn-pw').onclick = () => passwordForm(false);
     const back = $('#console-back');
     back.hidden = !imp; back.textContent = '← Lightech Console'; back.onclick = backToConsole;
     const ban = $('#imp-banner');
@@ -1068,6 +1074,31 @@
     $('#btn-add-lead').hidden = !isStaff();
     $('#btn-add-session').hidden = !can.editSession();
     views[v]();
+    if (Backend.serverAuth && !imp && me.mustChange && !$('#modal').classList.contains('open')) passwordForm(true);
+  }
+  // Change own password (server mode). First sign-in with a one-time password: required, cannot be dismissed.
+  function passwordForm(required) {
+    openModal(required ? tr('Create your own password', 'Buat password Anda sendiri') : tr('Change password', 'Ganti password'), `
+      ${required ? `<p class="muted" style="margin:0 0 10px">${esc(tr('You signed in with a one-time password. Choose your own to continue; only you will know it.', 'Anda masuk dengan password sekali pakai. Buat password sendiri untuk melanjutkan; hanya Anda yang tahu.'))}</p>` : ''}
+      <label class="field"><span>${tr('Current password', 'Password saat ini')}</span><input type="password" name="old" id="f-pw-old" required autocomplete="current-password"></label>
+      <label class="field"><span>${tr('New password (min. 8 characters)', 'Password baru (min. 8 karakter)')}</span><input type="password" name="next" id="f-pw-new" required minlength="8" autocomplete="new-password"></label>
+      <label class="field"><span>${tr('Repeat new password', 'Ulangi password baru')}</span><input type="password" name="again" id="f-pw-again" required minlength="8" autocomplete="new-password"></label>
+      <div class="err" id="pw-err"></div>
+      <div class="modal-foot">${required ? `<button type="button" class="btn" id="pw-out">${esc(tr('Sign out', 'Keluar'))}</button>` : `<button type="button" class="btn" data-close-modal>${tr('Cancel', 'Batal')}</button>`}<button type="submit" class="btn btn-primary">${esc(tr('Save password', 'Simpan password'))}</button></div>`,
+    async (fd) => {
+      const fail = (m) => { setTimeout(() => { const el = $('#pw-err'); if (el) el.textContent = m; }, 0); return false; };
+      if (String(fd.get('next')).length < 8) return fail(tr('Use at least 8 characters.', 'Minimal 8 karakter.'));
+      if (fd.get('next') !== fd.get('again')) return fail(tr('The two new passwords do not match.', 'Dua password baru tidak sama.'));
+      let r; try { r = await Backend.call('password', { oldPassword: fd.get('old'), newPassword: fd.get('next') }); } catch (e) { r = { ok: false, message: tr('Cannot reach the server.', 'Server tidak bisa dihubungi.') }; }
+      if (!r.ok) return fail(r.error === 'invalid' && /Current/.test(r.message || '') ? tr('Current password is wrong.', 'Password saat ini salah.') : (r.message || tr('Could not change the password.', 'Password gagal diganti.')));
+      delete $('#modal').dataset.locked;
+      if (me) delete me.mustChange;
+      toast(tr('Password saved. Welcome!', 'Password tersimpan. Selamat datang!'));
+    });
+    if (required) {
+      $('#modal').dataset.locked = '1';
+      $('#pw-out').onclick = () => { delete $('#modal').dataset.locked; closeModal(); logout(); };
+    }
   }
 
   // =====================================================================
@@ -2022,7 +2053,7 @@
           <div class="card-title">${tr('Lead capture form', 'Form lead capture')}</div>
           <div class="hint">${tr('A public form for your website, Instagram bio or ads. Every submission lands in the pipeline and is assigned to the BD with the fewest open leads.', 'Form publik untuk website, bio Instagram atau iklan. Setiap kiriman masuk pipeline dan otomatis dibagi ke BD dengan lead aktif paling sedikit.')}</div>
           <label class="check mt"><input type="checkbox" id="set-publicform" ${c.publicForm ? 'checked' : ''}> ${tr('Form is live', 'Form aktif')}</label>
-          ${c.publicForm ? `<div class="copy-row mt"><input id="form-link" readonly value="${esc(location.href.split('#')[0].split('?')[0] + '?form=' + S.slug)}"><button class="btn btn-sm" type="button" id="copy-form">${tr('Copy', 'Salin')}</button><a class="btn btn-sm" target="_blank" rel="noopener" href="${esc('?form=' + S.slug)}">${tr('Open', 'Buka')}</a></div>
+          ${c.publicForm ? `<div class="copy-row mt"><input id="form-link" readonly value="${esc(appLink() + '?form=' + S.slug)}"><button class="btn btn-sm" type="button" id="copy-form">${tr('Copy', 'Salin')}</button><a class="btn btn-sm" target="_blank" rel="noopener" href="${esc(appLink() + '?form=' + S.slug)}">${tr('Open', 'Buka')}</a></div>
           <div class="hint">${tr('Track campaigns by adding &src=Instagram (must match a lead source).', 'Lacak kampanye dengan menambah &src=Instagram (harus sama dengan sumber lead).')}</div>` : ''}
         </div>
         <div class="card">
@@ -2798,7 +2829,7 @@
       const err = (m) => { const el = $('#pf-err'); el.hidden = false; el.textContent = m; btn.disabled = false; };
       if (waNumber(v.phone).length < 9) { err(tr('Please enter a valid WhatsApp number.', 'Masukkan nomor WhatsApp yang valid.')); return; }
       let r;
-      try { r = await submitPublicLead(slug, info, Object.assign({ source: new URLSearchParams(location.search).get('src') || '' }, v)); } catch (x) { r = { ok: false, error: 'network' }; }
+      try { r = await submitPublicLead(slug, info, Object.assign({ source: urlParam('src') }, v)); } catch (x) { r = { ok: false, error: 'network' }; }
       if (r.ok) { if (formMode) formMode.done = true; renderPublicForm(slug, info, true); return; }
       err(r.error === 'busy' ? tr('Too many submissions right now. Please try again in a few minutes.', 'Terlalu banyak kiriman. Coba lagi beberapa menit lagi.') : r.error === 'network' ? tr('Cannot reach the server. Check your connection.', 'Server tidak bisa dihubungi. Cek koneksi Anda.') : tr('Could not send. Please check your details.', 'Gagal mengirim. Cek kembali data Anda.'));
     };
@@ -2816,7 +2847,7 @@
     const st = openStages()[0];
     const prog = program(v.programId);
     const nowIso = new Date().toISOString();
-    S.leads.unshift({ id: uid('L'), name: v.name.trim().slice(0, 80), phone: v.phone.trim(), email: v.email || '', company: v.company || '', source: S.config.sources.includes(v.source) ? v.source : 'Website form', ownerId: pickOwner(), programId: prog ? prog.id : '', value: prog ? Number(prog.price) || 0 : 0,
+    S.leads.unshift({ id: uid('L'), name: v.name.trim().slice(0, 80), phone: v.phone.trim(), email: v.email || '', company: v.company || '', source: S.config.sources.find((x) => x.toLowerCase() === String(v.source || '').toLowerCase()) || String(v.source || '').replace(/[^A-Za-z0-9 _.\-/&]/g, '').slice(0, 40) || 'Website form', ownerId: pickOwner(), programId: prog ? prog.id : '', value: prog ? Number(prog.price) || 0 : 0,
       stageId: st.id, nextAction: 'WhatsApp follow-up (web form)', nextActionDate: todayISO(), notes: v.message || '', createdAt: nowIso, updatedAt: nowIso, createdBy: 'web-form', history: [{ at: nowIso, from: null, to: st.id, note: 'Web form', by: 'web-form' }] });
     if (Backend.flush) { await Backend.flush(S); if (Backend.idle) await Backend.idle(); } else Backend.save();
     if (Backend.close) Backend.close();
@@ -2959,6 +2990,10 @@
   // Single-brand deployments: the bare link opens this company's sign-in (Lightech still uses #lightech).
   const DEFAULT_TENANT = String((window.MCRM_CONFIG || {}).defaultTenant || '').toLowerCase();
   let formMode = null;
+  // When served by Apps Script the app runs in an iframe: the page's own link and its ?form=/&src= come from the server.
+  const cfgParams = (window.MCRM_CONFIG || {}).params || {};
+  const urlParam = (k) => String(cfgParams[k] || new URLSearchParams(location.search).get(k) || '');
+  const appLink = () => (window.MCRM_CONFIG || {}).publicUrl || location.href.split('#')[0].split('?')[0];
   async function bootForm(slug) {
     let info = null;
     try {
@@ -2982,7 +3017,7 @@
     showLoading();
     if (!Backend) Backend = await pickBackend();
     setSync(Backend.mode === 'local' ? 'local' : 'cloud');
-    const formSlug = (new URLSearchParams(location.search).get('form') || '').toLowerCase();
+    const formSlug = urlParam('form').toLowerCase();
     if (formSlug) { await bootForm(formSlug); return; }
     if (Backend.serverAuth) { try { await bootServer(); } catch (e) { renderNeutralLogin(tr('Cannot reach the server. Check your connection and reload.', 'Server tidak bisa dihubungi. Cek koneksi lalu muat ulang.')); } return; }
     try { platform = await Backend.getPlatform(); } catch (e) { platform = null; }

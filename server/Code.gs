@@ -26,7 +26,9 @@ const ADMIN_EMAIL = 'super@lightech.co.id';
 const SESSION_HOURS = 6;              // token lifetime (CacheService max is 6 h)
 const MAX_FAILED_LOGINS = 5;          // per email, then locked for LOCK_MINUTES
 const LOCK_MINUTES = 15;
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
+const APP_TITLE = 'AlphaLeaders · Lightech Mentoring App';
+const DEFAULT_TENANT = 'alphaleaders'; // company whose sign-in the bare link opens; Lightech staff add #lightech
 
 // ───────────────────────────────────────────────────────── entry points
 function doPost(e) {
@@ -38,7 +40,22 @@ function doPost(e) {
     return out_({ ok: false, error: 'server', message: String(err && err.message || err) });
   }
 }
-function doGet() { return out_({ ok: true, service: 'lightech-mentoring-app', version: VERSION }); }
+// GET <web app url>            → the app itself (served by this script: no separate hosting needed)
+// GET <web app url>?health=1   → JSON health check
+// GET <web app url>?form=<code>&src=<campaign> → that company's public lead form
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  if (p.health !== undefined) return out_({ ok: true, service: 'lightech-mentoring-app', version: VERSION });
+  const url = ScriptApp.getService().getUrl();
+  const clip = function (v) { return String(v || '').replace(/[^A-Za-z0-9 _.\-]/g, '').slice(0, 60); };
+  const cfg = { apiUrl: url, publicUrl: url, defaultTenant: DEFAULT_TENANT, assetBase: ASSET_BASE, params: { form: clip(p.form), src: clip(p.src) } };
+  const html = APP_SHELL.split('__ASSETS__').join(ASSET_BASE).replace('__CONFIG__', JSON.stringify(cfg).replace(/</g, '\\u003c'));
+  return HtmlService.createHtmlOutput(html)
+    .setTitle(APP_TITLE)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+    .setFaviconUrl(ASSET_BASE + 'assets/brands/alphaleaders-icon.png')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL); // lets lightech.co.id/alpha embed it later
+}
 
 function handle_(req) {
   const a = String(req.action || '');
@@ -51,6 +68,7 @@ function handle_(req) {
   if (!sess) return { ok: false, error: 'auth', message: 'Session expired. Please sign in again.' };
   switch (a) {
     case 'whoami': return { ok: true, session: publicSession_(sess) };
+    case 'password': return changePassword_(sess, req);
     case 'logout': cache_().remove('tok:' + req.token); return { ok: true };
     case 'list': return list_(sess, req.collection, t0);
     case 'get': return get_(sess, req.path);
@@ -83,16 +101,35 @@ function setup() {
 }
 
 // Creates the AlphaLeaders company (brand, funnel, programs, Owner account) once. Safe to run again.
-const FIRST_COMPANY = { slug: 'alphaleaders', owners: [{ id: 'u-owner', name: 'Coach Ferly F Raya', email: 'ferly@alphaleaders.id' }, { id: 'u-ferry', name: 'Ferry Davira', email: 'ferry@alphaleaders.id' }] }; // Owners who also coach; the rest of the team: Team & Access
+// The whole AlphaLeaders team; each gets a one-time password and must choose their own at first sign-in.
+// Emails can be changed by the Owner in Team & Access.
+const FIRST_COMPANY = {
+  slug: 'alphaleaders',
+  team: [
+    { id: 'u-owner', name: 'Coach Ferly F Raya', email: 'ferly@alphaleaders.id', role: 'superadmin', coach: true },
+    { id: 'u-ferry', name: 'Ferry Davira', email: 'ferry@alphaleaders.id', role: 'superadmin', coach: true },
+    { id: 'u-lisa', name: 'Tami', email: 'tami@alphaleaders.id', role: 'admin' },
+    { id: 'u-anita', name: 'Anita', email: 'anita@alphaleaders.id', role: 'admin' },
+    { id: 'm-hendra', name: 'Josshhua Abraham', email: 'josshhua@alphaleaders.id', role: 'mentor' },
+    { id: 'm-sylvia', name: 'Anthony Sihombing', email: 'anthony@alphaleaders.id', role: 'mentor' },
+    { id: 'm-alvin', name: 'Wulansari Suharto', email: 'wulansari@alphaleaders.id', role: 'mentor' },
+    { id: 'm-charles', name: 'Charles Suryana', email: 'charles@alphaleaders.id', role: 'mentor' },
+    { id: 'm-malvin', name: 'Malvin Haryanto', email: 'malvin@alphaleaders.id', role: 'mentor' },
+    { id: 'm-rizki', name: 'Rizki Esa', email: 'rizki@alphaleaders.id', role: 'mentor' },
+    { id: 'b-rina', name: 'Julia', email: 'julia@alphaleaders.id', role: 'bd' },
+    { id: 'b-fajar', name: 'Paul', email: 'paul@alphaleaders.id', role: 'bd' }
+  ]
+};
 function setupAlphaLeaders() {
   const store = load_();
   if (metas_(store).some(function (m) { return slugOf_(m) === FIRST_COMPANY.slug; })) { Logger.log('AlphaLeaders already exists. Nothing changed.'); return; }
-  const owners = FIRST_COMPANY.owners.map(function (o) {
-    const a = { id: o.id, name: o.name, email: o.email, role: 'superadmin', coach: true, active: true };
+  const owners = FIRST_COMPANY.team.map(function (o) {
+    const a = { id: o.id, name: o.name, email: o.email, role: o.role, active: true, mustChange: true };
+    if (o.coach) a.coach = true;
     a.oneTime = randomPassword_(); setPassword_(a, a.oneTime);
     return a;
   });
-  const log = owners.map(function (a) { const line = 'AlphaLeaders Owner ' + a.name + ': ' + a.email + '  one-time password: ' + a.oneTime; delete a.oneTime; return line; });
+  const log = owners.map(function (a) { const line = 'AlphaLeaders ' + a.role + ' · ' + a.name + ': ' + a.email + '  one-time password: ' + a.oneTime; delete a.oneTime; return line; });
   const id = 'ws-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
   const meta = {
     name: 'AlphaLeaders', slug: FIRST_COMPANY.slug, status: 'active', preset: 'alphaleaders', createdAt: new Date().toISOString(), v: 3,
@@ -129,7 +166,8 @@ function setupAlphaLeaders() {
   };
   writeDocs_(store, [{ op: 'set', path: 'ws/' + id, data: meta }], 'setup');
   audit_('setup', id, 'save', 'ws/' + id, 'Created AlphaLeaders with Owners ' + owners.map(function (a) { return a.email; }).join(', '));
-  log.forEach(function (l) { Logger.log(l + '  (sign in at <app link>#alphaleaders and change it)'); });
+  log.forEach(function (l) { Logger.log(l); });
+  Logger.log('Send each person their own line privately. Everyone chooses a new password at first sign-in.');
 }
 
 // ───────────────────────────────────────────────────────── auth
@@ -246,7 +284,9 @@ function capture_(req) {
     const openIds = {}; stages.forEach(function (x) { if (x.type === 'open') openIds[x.id] = 1; });
     const owner = pickOwner_(w.data.accounts || [], leads, openIds);
     const prog = (w.data.programs || []).filter(function (p) { return p.id === req.programId; })[0];
-    const src = (cfg.sources || []).indexOf(req.source) >= 0 ? req.source : 'Website form';
+    // Campaign source from the link (&src=): matched to a known source, else kept as typed (cleaned), else "Website form".
+    const rawSrc = clip(req.source, 40).replace(/[^A-Za-z0-9 _.\-\/&]/g, '');
+    const src = (cfg.sources || []).filter(function (x) { return x.toLowerCase() === rawSrc.toLowerCase(); })[0] || rawSrc || 'Website form';
     const now = new Date(), iso = now.toISOString();
     const lead = {
       id: 'L' + Utilities.getUuid().replace(/-/g, '').slice(0, 12), name: name, phone: phone, email: clip(req.email, 120), company: clip(req.company, 120),
@@ -428,8 +468,12 @@ function keepSecrets_(store, path, d) {
   const byId = {};
   (old[key] || []).forEach(function (a) { byId[a.id] = a; });
   d = JSON.parse(JSON.stringify(d));
+  const demo = !!(d.config && d.config.demoLogin); // practice workspaces with one-click demo sign-in skip the first-sign-in step
   (d[key] || []).forEach(function (a) {
     delete a.defaultPw;
+    // Server-owned flag: a password set by someone else must be changed at next sign-in; otherwise keep what is stored.
+    if (a.pw && !demo) a.mustChange = true;
+    else { delete a.mustChange; if (byId[a.id] && byId[a.id].mustChange) a.mustChange = true; }
     if (!a.pw && byId[a.id]) { a.pw = byId[a.id].pw; a.salt = byId[a.id].salt; }
   });
   return d;
@@ -519,7 +563,33 @@ function sha256Hex_(s) {
   return bytes.map(function (b) { const v = (b < 0 ? b + 256 : b).toString(16); return v.length === 1 ? '0' + v : v; }).join('');
 }
 function checkPassword_(acc, pw) { return !!acc.pw && acc.pw === sha256Hex_((acc.salt || '') + ':' + pw); }
+// Any signed-in person changes their own password (old one required); clears the first-sign-in flag.
+function changePassword_(s, req) {
+  const next = String(req.newPassword || '');
+  if (next.length < 8) return { ok: false, error: 'invalid', message: 'Use at least 8 characters.' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const store = load_();
+    const path = s.kind === 'platform' ? 'platform/main' : 'ws/' + s.wsId;
+    const doc = data_(store, path);
+    const key = s.kind === 'platform' ? 'admins' : 'accounts';
+    const id = s.kind === 'platform' ? s.adminId : s.accountId;
+    const acc = ((doc || {})[key] || []).filter(function (a) { return a.id === id; })[0];
+    if (!acc || !checkPassword_(acc, String(req.oldPassword || ''))) return { ok: false, error: 'invalid', message: 'Current password is wrong.' };
+    if (checkPassword_(acc, next)) return { ok: false, error: 'invalid', message: 'Choose a different password.' };
+    setPassword_(acc, next); delete acc.mustChange;
+    writeDocs_(store, [{ op: 'set', path: path, data: doc }], s.email);
+    audit_(s.email, s.wsId || 'lightech', 'password', path, 'changed own password');
+    return { ok: true };
+  } finally { lock.releaseLock(); }
+}
 function setPassword_(acc, pw) { acc.salt = Utilities.getUuid().replace(/-/g, '').slice(0, 10); acc.pw = sha256Hex_(acc.salt + ':' + pw); }
 function randomPassword_() { return Utilities.getUuid().replace(/-/g, '').slice(0, 12); }
 function cache_() { return CacheService.getScriptCache(); }
 function out_(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
+
+// ── app shell (generated by scripts/build-gas.mjs; do not edit by hand) ──
+const ASSET_BASE = 'https://cdn.jsdelivr.net/gh/oasys-lightrees/mentoring_app@e7347f8da7f514558b353347252f3bb4f8f1f0d8/';
+const APP_SHELL = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap\">\n<link rel=\"stylesheet\" href=\"__ASSETS__assets/app.css\">\n</head>\n<body>\n<div id=\"gate\" hidden></div>\n\n<div id=\"app\" hidden>\n  <header class=\"topbar\">\n    <div class=\"topbar-inner\">\n      <div class=\"brand\">\n        <div class=\"brand-logo\" id=\"brand-logo\">L</div>\n        <div style=\"min-width:0\">\n          <div class=\"brand-name ellipsis\" id=\"brand-name\">Lightech Mentoring App</div>\n          <div class=\"brand-tag ellipsis\" id=\"brand-tag\"></div>\n        </div>\n      </div>\n      <div class=\"topbar-actions\">\n        <span class=\"sync local\" id=\"sync\"><span class=\"dot\"></span><span id=\"sync-text\"></span></span>\n        <button class=\"btn btn-bar\" id=\"console-back\" type=\"button\" hidden></button>\n        <button class=\"btn btn-gold\" id=\"btn-add-lead\" type=\"button\">+ <span id=\"btn-add-lead-label\">Lead</span></button>\n        <button class=\"btn btn-bar\" id=\"btn-add-session\" type=\"button\">+ <span id=\"btn-add-session-label\">Session</span></button>\n        <div class=\"me-chip\" id=\"me-chip\"></div>\n        <div class=\"lang-seg\" id=\"lang-bar\" role=\"group\" aria-label=\"Language\"></div>\n      </div>\n    </div>\n    <nav class=\"tabs\" id=\"tabs\" aria-label=\"Main menu\"></nav>\n  </header>\n  <div class=\"imp-banner\" id=\"imp-banner\" hidden></div>\n\n  <main id=\"view\" class=\"container\"></main>\n</div>\n\n<aside id=\"drawer\" class=\"drawer\" aria-hidden=\"true\">\n  <div class=\"drawer-backdrop\" data-close-drawer></div>\n  <div class=\"drawer-panel\" id=\"drawer-panel\"></div>\n</aside>\n\n<div id=\"modal\" class=\"modal\" aria-hidden=\"true\">\n  <div class=\"modal-card\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"modal-title\">\n    <div class=\"modal-head\">\n      <h3 id=\"modal-title\"></h3>\n      <button class=\"icon-btn\" type=\"button\" data-close-modal aria-label=\"Close\">✕</button>\n    </div>\n    <form id=\"modal-form\" class=\"modal-body\" autocomplete=\"off\"></form>\n  </div>\n</div>\n\n<div id=\"toast\" class=\"toast\" role=\"status\" aria-live=\"polite\"></div>\n<script>window.MCRM_CONFIG = __CONFIG__;</script>\n<script src=\"__ASSETS__assets/presets.js\"></script>\n<script src=\"__ASSETS__assets/app.js\"></script>\n</body>\n</html>";
+// ── end app shell ──

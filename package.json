@@ -1,14 +1,15 @@
 {
   "name": "lightech-mentoring-app",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "White-label Lead \u2192 Deal \u2192 Client CRM for coaching & mentoring companies (Lightech platform).",
   "scripts": {
-    "test": "node tests/server.test.js && node tests/e2e-server.js && node tests/e2e-features.js && node tests/e2e-local-cloud.js local && node tests/e2e-local-cloud.js cloud",
+    "test": "node scripts/build-gas.mjs --check && node tests/server.test.js && node tests/e2e-gas.js && node tests/e2e-server.js && node tests/e2e-features.js && node tests/e2e-local-cloud.js local && node tests/e2e-local-cloud.js cloud",
     "test:server": "node tests/server.test.js",
     "build:artifact": "node scripts/build-artifact.mjs",
     "build:deploy": "node scripts/build-deploy.mjs",
-    "test:e2e": "node tests/e2e-server.js && node tests/e2e-features.js && node tests/e2e-local-cloud.js local && node tests/e2e-local-cloud.js cloud"
+    "test:e2e": "node tests/e2e-server.js && node tests/e2e-features.js && node tests/e2e-local-cloud.js local && node tests/e2e-local-cloud.js cloud",
+    "build:gas": "node scripts/build-gas.mjs"
   },
   "devDependencies": {
     "playwright": "^1.56.1"

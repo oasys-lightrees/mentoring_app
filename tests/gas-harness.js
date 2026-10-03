@@ -4,7 +4,8 @@ const vm = require('vm');
 const crypto = require('crypto');
 const path = require('path');
 
-function createServer() {
+function createServer(opts) {
+  opts = opts || {};
   const sheets = {};
   const cache = new Map();
   const logs = [];
@@ -33,11 +34,17 @@ function createServer() {
     },
     ContentService: { createTextOutput: (t) => ({ setMimeType() { return this; }, getContent: () => t }), MimeType: { JSON: 'json' } },
     Logger: { log: (m) => logs.push(String(m)) },
+    ScriptApp: { getService: () => ({ getUrl: () => opts.url || 'https://script.google.com/macros/s/TEST/exec' }) },
+    HtmlService: {
+      XFrameOptionsMode: { ALLOWALL: 'ALLOWALL', DEFAULT: 'DEFAULT' },
+      createHtmlOutput: (html) => { const o = { html, meta: {}, setTitle(t) { o.title = t; return o; }, addMetaTag(k, v) { o.meta[k] = v; return o; }, setFaviconUrl(u) { o.favicon = u; return o; }, setXFrameOptionsMode(m) { o.xframe = m; return o; }, getContent: () => html }; return o; }
+    },
     Date, JSON, Math, String, Number, Array, Object, RegExp, Error
   };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'server', 'Code.gs'), 'utf8'), ctx);
   const post = (body) => JSON.parse(ctx.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } }).getContent());
-  return { post, setup: () => ctx.setup(), setupAlphaLeaders: () => ctx.setupAlphaLeaders(), logs, sheets, cache };
+  const get = (params) => ctx.doGet({ parameter: params || {} });
+  return { post, get, setup: () => ctx.setup(), setupAlphaLeaders: () => ctx.setupAlphaLeaders(), logs, sheets, cache };
 }
 module.exports = { createServer };
