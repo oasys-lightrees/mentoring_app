@@ -30,7 +30,8 @@
     alphaleaders: {
       name: 'AlphaLeaders Coaching',
       config: {
-        brandName: 'AlphaLeaders', tagline: 'Coaching CRM · Lead to Deal', accent: '#1a4fa0', currency: 'IDR', demoLogin: true,
+        brandName: 'AlphaLeaders', tagline: 'Coaching CRM · Lead to Deal', accent: '#1c1c1c', currency: 'IDR', demoLogin: true,
+        logo: 'assets/brands/alphaleaders-logo.png', mark: 'assets/brands/alphaleaders-mark.png', bar: '#0a0a0a', bar2: '#1d1d1d', gold: '#d4a537',
         labels: Object.assign({}, labelsCoach),
         stages: funnelALUR, sessionTypes: sessionsALUR,
         sources: ['Meta Ads', 'Google Ads', 'Referral', 'Organic / Social', 'Event / Seminar', 'BD Relation', 'Walk-in'],
@@ -177,5 +178,5 @@
     ['Client portal (own program & sessions)', 'Portal client (program & sesi sendiri)', ['client']]
   ];
   // Words that cannot be used as a company login slug (they are app routes).
-  window.RESERVED_SLUGS = ['dashboard', 'pipeline', 'leads', 'sessions', 'clients', 'team', 'settings', 'portal', 'companies', 'admins', 'lightech', 'console', 'login', 'audit', 'reports', 'calendar', 'join', 'apply', 'signup', 'api', 'admin', 'app'];
+  window.RESERVED_SLUGS = ['dashboard', 'pipeline', 'leads', 'sessions', 'clients', 'team', 'settings', 'portal', 'companies', 'admins', 'lightech', 'console', 'login', 'audit', 'reports', 'calendar', 'join', 'apply', 'signup', 'api', 'admin', 'app', 'form'];
 })();

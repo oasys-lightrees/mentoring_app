@@ -177,4 +177,14 @@ assert.strictEqual(srv.post({ action: 'login', email: 'owner@piwa.id', password:
 // Audit
 r = srv.post({ action: 'audit', token: P, limit: 100 });
 assert.ok(r.ok && r.rows.some((x) => x.action === 'login_failed') && r.rows.some((x) => x.action === 'save')); ok('audit log records sign-ins, failures and saves');
+
+// One-click company setup for go-live
+const fresh = createServer(); fresh.setup(); fresh.setupAlphaLeaders(); fresh.setupAlphaLeaders();
+const ownerPw = (fresh.logs.find((l) => l.includes('AlphaLeaders Owner')) || '').match(/one-time password: (\S+)/)[1];
+assert.ok(fresh.logs.some((l) => l.includes('already exists'))); ok('setupAlphaLeaders runs once; a second run changes nothing');
+const fb = fresh.post({ action: 'brand', slug: 'alphaleaders' });
+assert.ok(fb.ok && fb.config.logo.endsWith('alphaleaders-logo.png') && fb.config.bar === '#0a0a0a' && fb.chips.length === 0); ok('AlphaLeaders ships with its logo and theme, demo sign-in off');
+const fo = fresh.post({ action: 'login', email: 'owner@alphaleaders.id', password: ownerPw, slug: 'alphaleaders' });
+assert.ok(fo.ok && fo.session.role === 'superadmin'); ok('AlphaLeaders Owner signs in with the one-time password');
+assert.strictEqual(fresh.post({ action: 'login', email: 'owner@alphaleaders.id', password: 'demo', slug: 'alphaleaders' }).ok, false); ok('no default password on the production company');
 console.log(`\n${n} server checks passed`);

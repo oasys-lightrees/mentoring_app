@@ -30,6 +30,11 @@ let failed = false; const log0 = console.log; console.log = (...a) => { if (a.so
   }
   // 1. neutral
   await p.goto(BASE); await p.waitForSelector('#login-form');
+  const dflt = await p.evaluate(() => (window.MCRM_CONFIG || {}).defaultTenant || '');
+  if (dflt) { // single-brand package: bare link opens that company, #lightech stays neutral
+    console.log('1a bare link opens the default company:', (await p.$('.gate-hero img[alt="AlphaLeaders"]')) !== null || (await txt()).includes('AlphaLeaders'));
+    await p.goto('about:blank'); await p.goto(BASE + '#lightech'); await p.waitForSelector('#login-form');
+  }
   console.log('1 neutral has no brand list:', !(await txt()).includes('PIWA') && !(await txt()).includes('AlphaLeaders'));
   await p.screenshot({ path: require('os').tmpdir() + '/w-neutral.png' });
   // 2. tenant link

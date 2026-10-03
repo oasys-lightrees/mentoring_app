@@ -1,5 +1,5 @@
 /*
- * Lightrees Mentoring CRM — white-label, multi-company Lead → Deal → Client.
+ * Lightech Mentoring App — white-label, multi-company Lead → Deal → Client.
  *
  *  - Every company (tenant) logs in on its own branded screen (link ending in #<slug>) and only ever sees its own brand.
  *  - Lightech platform admins sign in to the Lightech Console to create, configure and open every company.
@@ -948,13 +948,26 @@
   }
   const refreshSync = () => setSync($('#sync').dataset.state || (Backend && Backend.mode === 'cloud' ? 'cloud' : 'local'));
 
+  // Brand mark: the company's icon image when set, otherwise its initial.
+  const safeUrl = (u) => (/^(https:\/\/|assets\/|data:image\/)/.test(String(u || '')) ? String(u) : '');
+  const markHTML = (c) => (safeUrl(c.mark) ? `<img src="${esc(safeUrl(c.mark))}" alt="">` : esc(initials(c.brandName).slice(0, 1) || 'C'));
+  function setTheme(c) {
+    const root = document.documentElement.style;
+    root.setProperty('--accent', (c && c.accent) || '#1a4fa0');
+    [['--bar', 'bar'], ['--bar-2', 'bar2'], ['--gold', 'gold']].forEach(([v, k]) => { if (c && c[k]) root.setProperty(v, c[k]); else root.removeProperty(v); });
+    const lum = (hex) => { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return 1; const n = parseInt(m[1], 16); return ((n >> 16) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114) / 255; };
+    if (c && c.bar && lum(c.bar) < 0.12 && lum(c.accent) < 0.2) document.documentElement.setAttribute('data-noir', ''); else document.documentElement.removeAttribute('data-noir');
+    let icon = document.querySelector('link[rel=icon]');
+    if (c && safeUrl(c.mark)) { if (!icon) { icon = document.createElement('link'); icon.rel = 'icon'; document.head.appendChild(icon); } icon.href = safeUrl(c.mark); }
+  }
   function applyBrand() {
     if (!S) return;
     const c = S.config;
-    document.documentElement.style.setProperty('--accent', c.accent || '#1a4fa0');
+    setTheme(c);
     $('#brand-name').textContent = c.brandName || 'CRM';
     $('#brand-tag').textContent = c.tagline || '';
-    $('#brand-logo').textContent = initials(c.brandName).slice(0, 1) || 'C';
+    $('#brand-logo').innerHTML = markHTML(c);
+    $('#brand-logo').classList.toggle('has-img', !!safeUrl(c.mark));
     $('#btn-add-lead-label').textContent = L('lead');
     $('#btn-add-session-label').textContent = L('session');
     document.title = c.brandName || 'CRM';
@@ -1032,7 +1045,7 @@
   function renderNeutralLogin(err, emailVal) {
     S = null; me = null;
     document.title = tr('Sign in', 'Masuk');
-    document.documentElement.style.setProperty('--accent', '#1a4fa0');
+    setTheme(null);
     showGate(`<div class="gate-card">
       <div><div class="gate-title">${tr('Sign in', 'Masuk')}</div><div class="muted small">${tr('Use the email and password from your administrator.', 'Gunakan email & password dari administrator Anda.')}</div></div>
       <form id="login-form" class="form-stack" autocomplete="on">
@@ -1063,6 +1076,10 @@
     $$('[data-hit]').forEach((b) => b.onclick = () => go(hits[Number(b.dataset.hit)]));
   }
 
+  // Login / form header: full logo on the brand's dark band when a logo is set, otherwise icon + name.
+  const brandHead = (c, sub) => (safeUrl(c.logo)
+    ? `<div class="gate-hero"><img src="${esc(safeUrl(c.logo))}" alt="${esc(c.brandName)}"></div>${sub ? `<div class="muted small" style="text-align:center">${esc(sub)}</div>` : ''}`
+    : `<div class="gate-brand"><div class="brand-logo ${safeUrl(c.mark) ? 'has-img' : ''}">${markHTML(c)}</div><div><div class="gate-title">${esc(c.brandName)}</div><div class="muted small">${esc(sub == null ? c.tagline || '' : sub)}</div></div></div>`);
   function renderTenantLogin(err, emailVal) {
     const c = S.config;
     applyBrand();
@@ -1071,10 +1088,7 @@
     S.accounts.forEach((a) => { if (a.active !== false && !byRole[a.role]) byRole[a.role] = a; });
     const chips = window.ROLE_KEYS.filter((r) => byRole[r]).map((r) => byRole[r]);
     showGate(`<div class="gate-card">
-      <div class="gate-brand">
-        <div class="brand-logo" style="background:${esc(c.accent)}">${esc(initials(c.brandName).slice(0, 1))}</div>
-        <div><div class="gate-title">${esc(c.brandName)}</div><div class="brand-tag">${esc(c.tagline || '')}</div></div>
-      </div>
+      ${brandHead(c)}
       ${suspended ? `<div class="gate-err">${tr('This workspace is inactive. Contact your administrator.', 'Workspace ini nonaktif. Hubungi administrator Anda.')}</div>` : `
       <form id="login-form" class="form-stack" autocomplete="on">
         <label class="field"><span>Email</span><input id="login-email" type="email" required autocomplete="username" placeholder="name@company.com" value="${esc(emailVal || '')}"></label>
@@ -1149,11 +1163,11 @@
     if (!pme) { renderNeutralLogin(); return; }
     $('#gate').hidden = true; $('#gate').innerHTML = '';
     $('#app').hidden = false;
-    document.documentElement.style.setProperty('--accent', '#1a4fa0');
+    setTheme(null);
     document.title = 'Lightech Console';
     $('#brand-name').textContent = 'Lightech';
     $('#brand-tag').textContent = tr('Mentoring platform · Console', 'Platform mentoring · Console');
-    $('#brand-logo').textContent = 'L';
+    $('#brand-logo').textContent = 'L'; $('#brand-logo').classList.remove('has-img');
     chromeCommon();
     $('#btn-add-lead').hidden = true; $('#btn-add-session').hidden = true; $('#console-back').hidden = true; $('#imp-banner').hidden = true;
     $('#me-chip').innerHTML = `<span class="avatar">${esc(initials(pme.name))}</span><span><div class="me-name">${esc(pme.name)}</div><div class="me-role">${pme.role === 'owner' ? 'Lightech Super Admin' : 'Lightech Admin'}</div></span><button type="button" id="btn-logout">${tr('Sign out', 'Keluar')}</button>`;
@@ -1905,7 +1919,12 @@
           <div class="form-stack mt">
             <label class="field"><span>${tr('Brand name', 'Nama brand')}</span><input id="set-brand" data-cfg="brandName" value="${esc(c.brandName)}"></label>
             <label class="field"><span>Tagline</span><input id="set-tagline" data-cfg="tagline" value="${esc(c.tagline)}"></label>
-            <label class="field"><span>${tr('Brand colour', 'Warna brand')}</span><input id="set-accent" type="color" data-cfg="accent" value="${esc(c.accent)}"></label>
+            <div class="grid-2">
+              <label class="field"><span>${tr('Brand colour (buttons)', 'Warna brand (tombol)')}</span><input id="set-accent" type="color" data-cfg="accent" value="${esc(c.accent)}"></label>
+              <label class="field"><span>${tr('Header colour', 'Warna header')}</span><input id="set-bar" type="color" data-cfg-theme="bar" value="${esc(c.bar || '#0f2f6e')}"></label>
+            </div>
+            <label class="field"><span>${tr('Logo image (login & forms)', 'Gambar logo (login & form)')}</span><input id="set-logo" data-cfg="logo" value="${esc(c.logo || '')}" placeholder="https://…/logo.png"></label>
+            <label class="field"><span>${tr('Icon image (header & browser tab)', 'Gambar ikon (header & tab browser)')}</span><input id="set-mark" data-cfg="mark" value="${esc(c.mark || '')}" placeholder="https://…/icon.png"><div class="hint">${tr('PNG with transparent background works best. Must start with https://', 'Paling bagus PNG transparan. Harus diawali https://')}</div></label>
             <label class="check"><input type="checkbox" id="set-demologin" ${c.demoLogin ? 'checked' : ''}> ${tr('Show one-click demo sign-in (turn off before go-live)', 'Tampilkan login demo 1 klik (matikan saat go-live)')}</label>
             <div class="hint">${tr('Your team signs in with the app link ending in', 'Tim Anda login lewat link app yang diakhiri')} <span class="slug">#${esc(S.slug)}</span></div>
           </div>
@@ -1996,6 +2015,7 @@
       </div>`;
     const reBrand = () => { save(); applyBrand(); };
     $$('[data-cfg]').forEach((el) => el.onchange = () => { c[el.dataset.cfg] = el.value; reBrand(); toast(tr('Saved', 'Tersimpan')); });
+    $$('[data-cfg-theme]').forEach((el) => el.onchange = () => { c.bar = el.value; c.bar2 = el.value; reBrand(); toast(tr('Saved', 'Tersimpan')); });
     $$('[data-comm]').forEach((el) => el.onchange = () => { c.commission[el.dataset.comm] = Math.max(0, Number(el.value) || 0); save(); toast(tr('Saved', 'Tersimpan')); });
     $('#set-publicform').onchange = (e) => { c.publicForm = e.target.checked; save(); renderSettings(); toast(c.publicForm ? tr('Lead form is live', 'Form lead aktif') : tr('Lead form switched off', 'Form lead dimatikan')); };
     if ($('#copy-form')) $('#copy-form').onclick = async () => { const v = $('#form-link').value; try { await navigator.clipboard.writeText(v); toast(tr('Link copied', 'Link disalin')); } catch (e) { $('#form-link').select(); toast(tr('Select and copy the link', 'Pilih & salin link-nya')); } };
@@ -2635,15 +2655,15 @@
   function renderPublicForm(slug, info, done) {
     const c = info.config || {};
     document.title = (c.brandName || 'Contact') + ' · ' + tr('Get in touch', 'Hubungi kami');
-    document.documentElement.style.setProperty('--accent', c.accent || '#1a4fa0');
+    setTheme(c);
     if (!c.publicForm) { showGate(`<div class="gate-card"><div class="gate-title">${tr('This form is not available', 'Form ini tidak tersedia')}</div></div>`); return; }
     if (done) {
-      showGate(`<div class="gate-card form-card"><div class="gate-brand"><div class="brand-logo">${esc(initials(c.brandName))}</div><div class="gate-title">${esc(c.brandName)}</div></div>
+      showGate(`<div class="gate-card form-card">${brandHead(c, '')}
         <div class="success-mark" aria-hidden="true">✓</div><div class="gate-title" id="form-done">${tr('Thank you!', 'Terima kasih!')}</div><p class="muted">${tr('Our team will contact you on WhatsApp shortly.', 'Tim kami akan menghubungi Anda via WhatsApp segera.')}</p></div>`);
       return;
     }
     showGate(`<div class="gate-card form-card">
-      <div class="gate-brand"><div class="brand-logo">${esc(initials(c.brandName))}</div><div><div class="gate-title">${esc(c.brandName)}</div><div class="muted small">${esc(c.tagline || '')}</div></div></div>
+      ${brandHead(c)}
       <div><div class="gate-title">${tr('Book a free consultation', 'Booking konsultasi gratis')}</div><div class="muted small">${tr('Leave your details and we will reach out on WhatsApp.', 'Isi data Anda, kami akan menghubungi via WhatsApp.')}</div></div>
       <form id="pub-form" class="form-stack" autocomplete="on">
         <label class="field"><span>${tr('Full name *', 'Nama lengkap *')}</span><input id="pf-name" name="name" required maxlength="80" autocomplete="name"></label>
@@ -2761,6 +2781,7 @@
     if (!platform) platform = { admins: [] };
     const tok = location.hash.slice(1).toLowerCase();
     const isRoute = !tok || ROUTES.includes(tok);
+    if (!tok && DEFAULT_TENANT && !LS.get(K_TENANT) && !LS.get('mcrm:token')) LS.set(K_TENANT, DEFAULT_TENANT);
     if (tok === 'lightech' || tok === 'console') LS.del(K_TENANT);
     else if (!isRoute) LS.set(K_TENANT, tok);
     let sess = null;
@@ -2821,6 +2842,8 @@
     if (me) toast(tr(`Welcome, ${me.name.split(' ')[0]}!`, `Halo, ${me.name.split(' ')[0]}!`));
   }
 
+  // Single-brand deployments: the bare link opens this company's sign-in (Lightech still uses #lightech).
+  const DEFAULT_TENANT = String((window.MCRM_CONFIG || {}).defaultTenant || '').toLowerCase();
   let formMode = null;
   async function bootForm(slug) {
     let info = null;
@@ -2861,6 +2884,7 @@
     const tok = location.hash.slice(1).toLowerCase();
     const linked = tenantBySlug(tok);
     if (linked) LS.set(K_TENANT, tok);
+    else if (!tok && DEFAULT_TENANT && !LS.get(K_TENANT) && !LS.get(K_PAUTH) && tenantBySlug(DEFAULT_TENANT)) LS.set(K_TENANT, DEFAULT_TENANT);
     if (tok === 'lightech' || tok === 'console') LS.del(K_TENANT);
 
     const pa = (platform.admins || []).find((a) => a.id === LS.get(K_PAUTH) && a.active !== false);

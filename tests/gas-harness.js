@@ -38,6 +38,6 @@ function createServer() {
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'server', 'Code.gs'), 'utf8'), ctx);
   const post = (body) => JSON.parse(ctx.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } }).getContent());
-  return { post, setup: () => ctx.setup(), logs, sheets, cache };
+  return { post, setup: () => ctx.setup(), setupAlphaLeaders: () => ctx.setupAlphaLeaders(), logs, sheets, cache };
 }
 module.exports = { createServer };

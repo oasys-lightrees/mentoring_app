@@ -370,3 +370,17 @@ tr.clickable:hover td { background: var(--hover); }
   body { background: #fff; }
   .card { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
 }
+
+/* ---------- Brand logo (white-label) ---------- */
+.brand-logo.has-img { background: transparent; box-shadow: none; padding: 0; }
+.brand-logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.gate-hero { background: linear-gradient(180deg, var(--bar) 0%, var(--bar-2) 100%); border-radius: 14px; padding: 22px 16px 18px; display: grid; place-items: center; }
+.gate-hero img { max-width: 220px; width: 70%; height: auto; display: block; }
+
+/* ---------- Noir brands (black & gold, e.g. AlphaLeaders) ---------- */
+:root[data-noir] .me-chip .avatar { background: var(--gold); color: #1d1300; }
+@media (prefers-color-scheme: dark) {
+  :root[data-noir]:not([data-theme="light"]) { --bg: #0b0b0b; --card: #151515; --card-2: #1b1b1b; --line: #2a2a2a; --line-2: #3a3a3a; --soft: #1e1e1e; --hover: #1e1e1e; --accent: #d4a537 !important; }
+  :root[data-noir]:not([data-theme="light"]) .btn-primary, :root[data-noir]:not([data-theme="light"]) .seg button.on, :root[data-noir]:not([data-theme="light"]) .lead-kpi { color: #141005; }
+}
+:root[data-noir][data-theme="dark"] { --bg: #0b0b0b; --card: #151515; --card-2: #1b1b1b; --line: #2a2a2a; --line-2: #3a3a3a; --soft: #1e1e1e; --hover: #1e1e1e; --accent: #d4a537 !important; }

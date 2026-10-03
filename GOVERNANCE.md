@@ -1,6 +1,6 @@
 # Governance, Security & Data Protection
 
-How Lightrees Mentoring CRM meets good corporate governance (GCG) expectations for a multi-company SaaS platform, and what remains on the roadmap. Written for Lightech management, client companies and auditors.
+How Lightech Mentoring App meets good corporate governance (GCG) expectations for a multi-company SaaS platform, and what remains on the roadmap. Written for Lightech management, client companies and auditors.
 
 ## 1. Principles → controls
 

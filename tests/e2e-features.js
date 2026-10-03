@@ -61,7 +61,7 @@ let BASE = process.env.BASE;
   const f = await ctx.newPage(); f.on('pageerror', (e) => errs.push(e.message));
   await f.goto(link + '&src=Instagram'); await f.waitForSelector('#pub-form');
   const ft = await txt(f);
-  ok('public form shows the company brand only, no sign-in or team data', ft.includes('AlphaLeaders') && !ft.includes('Sign in') && !ft.includes('PIWA'));
+  ok('public form shows the company logo only, no sign-in or team data', (await f.$('.gate-hero img[alt="AlphaLeaders"]')) !== null && !ft.includes('Sign in') && !ft.includes('PIWA'));
   await f.fill('#pf-name', 'Web Visitor'); await f.fill('#pf-phone', '0813 5555 6666'); await f.fill('#pf-msg', 'Scale my business');
   if (await f.$('#pf-program')) await f.selectOption('#pf-program', { index: 1 });
   await f.click('#pub-form button[type=submit]'); await f.waitForSelector('#form-done');

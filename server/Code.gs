@@ -1,5 +1,5 @@
 /**
- * Lightrees Mentoring CRM — Server API (Google Apps Script + Google Sheets)
+ * Lightech Mentoring App — Server API (Google Apps Script + Google Sheets)
  * -------------------------------------------------------------------------
  * Server-side sign-in, per-company (tenant) data isolation and an audit trail
  * for the white-label CRM hosted at lightech.co.id/alpha.
@@ -12,10 +12,11 @@
  * Response : JSON { ok: true, ... } | { ok: false, error: 'auth' | 'forbidden' | 'locked' | 'suspended' | 'invalid' | 'not_found', message }
  *
  * === DEPLOY (10 minutes) ===
- * 1. Create a new Google Sheet (e.g. "Lightech Mentoring CRM — Data").
+ * 1. Create a new Google Sheet (e.g. "Lightech Mentoring App — Data").
  * 2. Extensions → Apps Script → replace Code.gs with this file → Save.
  * 3. Run `setup` once and approve the permissions.
  *    The execution log prints the Lightech Super Admin email and a one-time password. Store it in your password manager.
+ *    Then run `setupAlphaLeaders` once: it creates the AlphaLeaders company and prints its Owner's one-time password.
  * 4. Deploy → New deployment → Web app → Execute as: Me · Who has access: Anyone → Deploy.
  * 5. Copy the "/exec" URL into assets/config.js (apiUrl) of the /alpha site.
  */
@@ -37,7 +38,7 @@ function doPost(e) {
     return out_({ ok: false, error: 'server', message: String(err && err.message || err) });
   }
 }
-function doGet() { return out_({ ok: true, service: 'lightrees-mentoring-crm', version: VERSION }); }
+function doGet() { return out_({ ok: true, service: 'lightech-mentoring-app', version: VERSION }); }
 
 function handle_(req) {
   const a = String(req.action || '');
@@ -77,8 +78,55 @@ function setup() {
     audit_('setup', '', 'setup', 'platform/main', 'Created Lightech Super Admin ' + ADMIN_EMAIL);
     Logger.log('Lightech Super Admin: ' + ADMIN_EMAIL + '  one-time password: ' + pw + '  (change it after first sign-in)');
   } else {
-    Logger.log('Already set up. Nothing changed.');
+    Logger.log('Lightech Super Admin already exists.');
   }
+}
+
+// Creates the AlphaLeaders company (brand, funnel, programs, Owner account) once. Safe to run again.
+const FIRST_COMPANY = { slug: 'alphaleaders', ownerEmail: 'owner@alphaleaders.id', ownerName: 'AlphaLeaders Owner' };
+function setupAlphaLeaders() {
+  const store = load_();
+  if (metas_(store).some(function (m) { return slugOf_(m) === FIRST_COMPANY.slug; })) { Logger.log('AlphaLeaders already exists. Nothing changed.'); return; }
+  const pw = randomPassword_();
+  const owner = { id: 'u-owner', name: FIRST_COMPANY.ownerName, email: FIRST_COMPANY.ownerEmail, role: 'superadmin', active: true };
+  setPassword_(owner, pw);
+  const id = 'ws-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+  const meta = {
+    name: 'AlphaLeaders', slug: FIRST_COMPANY.slug, status: 'active', preset: 'alphaleaders', createdAt: new Date().toISOString(), v: 3,
+    config: {
+      brandName: 'AlphaLeaders', tagline: 'Coaching CRM · Lead to Deal', accent: '#1c1c1c', currency: 'IDR', demoLogin: false, publicForm: false,
+      logo: 'assets/brands/alphaleaders-logo.png', mark: 'assets/brands/alphaleaders-mark.png', bar: '#0a0a0a', bar2: '#1d1d1d', gold: '#d4a537',
+      labels: { lead: 'Lead', leads: 'Leads', client: 'Client', clients: 'Clients', mentor: 'Coach', mentors: 'Coaches', session: 'Session', sessions: 'Sessions', program: 'Program', programs: 'Programs', owner: 'BD / Sales' },
+      stages: [
+        { id: 'new', name: 'New Lead', color: '#64748b', prob: 5, sla: 2, type: 'open' },
+        { id: 'cov', name: 'COV Call (15m)', color: '#0284c7', prob: 15, sla: 3, type: 'open' },
+        { id: 'abm', name: 'ABM Mapping (2–3h)', color: '#d97706', prob: 40, sla: 7, type: 'open' },
+        { id: 'abe', name: 'ABE Closing (2h)', color: '#7c3aed', prob: 70, sla: 7, type: 'open' },
+        { id: 'won', name: 'Deal Won', color: '#16a34a', prob: 100, sla: 0, type: 'won' },
+        { id: 'lost', name: 'Lost', color: '#dc2626', prob: 0, sla: 0, type: 'lost' }
+      ],
+      sessionTypes: [
+        { id: 'st-cov', name: 'COV Call', duration: 15, color: '#0284c7', stageId: 'cov' },
+        { id: 'st-abm', name: 'ABM Assessment & Mapping', duration: 150, color: '#d97706', stageId: 'abm' },
+        { id: 'st-abe', name: 'ABE Proposal & Closing', duration: 120, color: '#7c3aed', stageId: 'abe' },
+        { id: 'st-coach', name: 'Coaching Session', duration: 120, color: '#16a34a', stageId: '' },
+        { id: 'st-review', name: 'Review / Induction', duration: 60, color: '#0f766e', stageId: '' }
+      ],
+      sources: ['Meta Ads', 'Google Ads', 'Referral', 'Organic / Social', 'Event / Seminar', 'BD Relation', 'Walk-in', 'Website form'],
+      lostReasons: ['Budget not ready', 'Timing not right', 'Chose a competitor', 'Unresponsive', 'Not qualified'],
+      waTemplate: 'Hi {name}, a quick reminder of your {type} with {mentor} on {date} at {time} WIB. See you there! — {brand}',
+      commission: { rate: 10, target: 0, bonus: 0 }
+    },
+    accounts: [owner],
+    programs: [
+      { id: 'p-private', name: '1-Year Private Coaching', format: 'Private', price: 120000000, sessions: 24, months: 12 },
+      { id: 'p-group', name: '1-Year Group Mastermind', format: 'Group', price: 36000000, sessions: 24, months: 12 },
+      { id: 'p-abm', name: 'Business Mapping (ABM only)', format: 'Private', price: 7500000, sessions: 1, months: 1 }
+    ]
+  };
+  writeDocs_(store, [{ op: 'set', path: 'ws/' + id, data: meta }], 'setup');
+  audit_('setup', id, 'save', 'ws/' + id, 'Created AlphaLeaders with Owner ' + FIRST_COMPANY.ownerEmail);
+  Logger.log('AlphaLeaders Owner: ' + FIRST_COMPANY.ownerEmail + '  one-time password: ' + pw + '  (sign in at <app link>#alphaleaders and change it)');
 }
 
 // ───────────────────────────────────────────────────────── auth
@@ -158,7 +206,7 @@ function brand_(req) {
   if (c.demoLogin) (w.data.accounts || []).forEach(function (a) { if (a.active !== false && !byRole[a.role]) byRole[a.role] = { id: a.id, name: a.name, role: a.role, email: a.email }; });
   return {
     ok: true, id: w.id, slug: slugOf_(w), status: w.data.status || 'active', name: w.data.name,
-    config: { brandName: c.brandName, tagline: c.tagline, accent: c.accent, labels: c.labels, demoLogin: !!c.demoLogin, publicForm: !!c.publicForm, stages: [], sessionTypes: [], sources: [], lostReasons: [] },
+    config: { brandName: c.brandName, tagline: c.tagline, accent: c.accent, logo: c.logo || '', mark: c.mark || '', bar: c.bar || '', bar2: c.bar2 || '', gold: c.gold || '', labels: c.labels, demoLogin: !!c.demoLogin, publicForm: !!c.publicForm, stages: [], sessionTypes: [], sources: [], lostReasons: [] },
     programs: c.publicForm ? (w.data.programs || []).map(function (p) { return { id: p.id, name: p.name }; }) : [],
     chips: Object.keys(byRole).map(function (k) { return byRole[k]; })
   };

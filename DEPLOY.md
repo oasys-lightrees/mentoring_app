@@ -1,6 +1,6 @@
 # Deploy ke lightech.co.id/alpha
 
-Runbook untuk mengganti versi yang sekarang ada di `lightech.co.id/alpha` dengan Lightrees Mentoring CRM. Estimasi waktu: **±20 menit**. Setiap langkah punya titik cek, dan ada jalur rollback.
+Runbook untuk mengganti versi yang sekarang ada di `lightech.co.id/alpha` dengan Lightech Mentoring App. Estimasi waktu: **±20 menit**. Setiap langkah punya titik cek, dan ada jalur rollback.
 
 ## Ringkasan arsitektur
 
@@ -17,22 +17,25 @@ Browser ──► lightech.co.id/alpha/            (file statis: index.html + as
 
 ## Langkah 1 — Backend (10 menit)
 
-1. Buat Google Sheet baru di Drive perusahaan, mis. **"Lightech Mentoring CRM — Data"**. Akses: hanya tim IT/owner.
+1. Buat Google Sheet baru di Drive perusahaan, mis. **"Lightech Mentoring App — Data"**. Akses: hanya tim IT/owner.
 2. Di Sheet: **Extensions → Apps Script**. Hapus isi `Code.gs`, tempel isi file `server/Code.gs` dari repo ini, lalu **Save**.
 3. Pilih fungsi **`setup`** → **Run** → setujui izin.
    - Buka **Execution log**: tercatat email `super@lightech.co.id` beserta **password sekali pakai**. Simpan di password manager.
    - ✅ Cek: Sheet sekarang punya tab `docs` dan `audit`.
+   - Lalu pilih fungsi **`setupAlphaLeaders`** → **Run**. Company AlphaLeaders langsung jadi: logo, tema hitam-emas, funnel COV → ABM → ABE, 3 program. Execution log mencatat **password sekali pakai Owner** (`owner@alphaleaders.id`).
 4. **Deploy → New deployment → Web app**
    - Execute as: **Me**
    - Who has access: **Anyone**
    - **Deploy**, lalu salin URL yang berakhiran `/exec`.
-   - ✅ Cek: buka URL itu di browser. Harus muncul `{"ok":true,"service":"lightrees-mentoring-crm",...}`.
+   - ✅ Cek: buka URL itu di browser. Harus muncul `{"ok":true,"service":"lightech-mentoring-app",...}`.
 
 ## Langkah 2 — Paket website (2 menit)
 
 Pilih salah satu:
 - **A. Dari repo:** `API_URL="https://script.google.com/macros/s/…/exec" node scripts/build-deploy.mjs` → hasilnya `dist/lightech-alpha.zip`.
 - **B. Dari zip yang sudah jadi:** buka `lightech-alpha.zip`, edit `assets/config.js`, lalu isi `apiUrl: "https://script.google.com/macros/s/…/exec"`.
+
+Paket default: link utama `lightech.co.id/alpha/` langsung membuka **login AlphaLeaders** (`defaultTenant: "alphaleaders"`). Tim Lightech masuk lewat `lightech.co.id/alpha/#lightech`. Untuk halaman login netral, build dengan `DEFAULT_TENANT= node scripts/build-deploy.mjs`.
 
 ## Langkah 3 — Ganti /alpha (5 menit)
 
@@ -44,13 +47,10 @@ Di cPanel → **File Manager** → `public_html/`:
 
 ## Langkah 4 — Setup company & go-live (5 menit)
 
-1. Di `https://lightech.co.id/alpha/` login dengan `super@lightech.co.id` + password dari langkah 1.
+1. Di `https://lightech.co.id/alpha/#lightech` login dengan `super@lightech.co.id` + password dari langkah 1.
 2. **Lightech admins → Edit diri sendiri → ganti password.** Peringatan "default password" harus hilang.
-3. **Companies → + New company:**
-   - Name `AlphaLeaders`, login code `alphaleaders`, template AlphaLeaders
-   - isi email & password owner
-   - centang *example data* hanya untuk demo
-4. Kirim ke owner AlphaLeaders: link **`https://lightech.co.id/alpha/#alphaleaders`** + email + password, lewat kanal privat (WA pribadi, bukan grup).
+3. AlphaLeaders sudah dibuat oleh `setupAlphaLeaders` (langkah 1). Company lain: **Companies → + New company**.
+4. Kirim ke owner AlphaLeaders: link **`https://lightech.co.id/alpha/`** + `owner@alphaleaders.id` + password sekali pakai dari Execution log, lewat kanal privat (WA pribadi, bukan grup). Owner langsung ganti password di **Team & Access**.
 5. ✅ Cek: buka link itu di jendela incognito. Yang muncul hanya brand AlphaLeaders.
 6. **Opsional: form lead publik.** Owner → Settings → *Lead capture form* → centang *Form is live*. Link `https://lightech.co.id/alpha/?form=alphaleaders` bisa dipasang di bio Instagram / landing page iklan (tambah `&src=Meta Ads` per kampanye).
 7. **Sebelum data asli masuk:**

@@ -11,4 +11,6 @@ const head = html.split('<!-- ARTIFACT:START -->')[1].split('<!-- ARTIFACT:HEAD-
 const body = html.split(/<body[^>]*>/)[1].split('</body>')[0].trim();
 mkdirSync(join(root, 'dist'), { recursive: true });
 writeFileSync(join(root, 'dist', 'artifact.html'), head + '\n' + body + '\n');
+// Demo link opens AlphaLeaders directly; Lightech staff use #lightech.
+writeFileSync(join(root, 'dist', 'artifact-config.js'), "window.MCRM_CONFIG = window.MCRM_CONFIG || { apiUrl: '', defaultTenant: 'alphaleaders' };\n");
 console.log('dist/artifact.html written');

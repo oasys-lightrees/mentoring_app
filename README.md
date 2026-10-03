@@ -1,4 +1,4 @@
-# Lightrees Mentoring CRM
+# Lightech Mentoring App
 
 White-label **Lead → Deal → Client** CRM for coaching, mentoring, training and consulting companies.
 Each company (AlphaLeaders, PIWA, iPlus, …) gets its own branded app; Lightech manages all of them from one console. UI in **English / Bahasa Indonesia** (toggle top-right).
@@ -11,14 +11,14 @@ Each company (AlphaLeaders, PIWA, iPlus, …) gets its own branded app; Lightech
 | **Demo** | [Claude Artifact](https://claude.ai/artifact/PDk86467k37K7Qs4wWPKoh) | Artifact database, real-time | Presentations with example data |
 | **Local** | open `index.html` | This browser only | Offline demo / development |
 
-The app picks the mode automatically: `assets/config.js → apiUrl` set → Production; inside a Claude Artifact → Demo; otherwise Local.
+The app picks the mode automatically: `assets/config.js → apiUrl` set → Production; inside a Claude Artifact → Demo; otherwise Local. `defaultTenant` makes the bare link open one company's sign-in (the production package and the demo default to AlphaLeaders; Lightech uses `#lightech`).
 
 ## How people sign in
 
 | Who | Link | What they see |
 |---|---|---|
-| A company's team (e.g. AlphaLeaders) | app link + `#alphaleaders` | Only their brand: logo, colours, terminology, data. No other company is ever shown. |
-| Lightech admins | app link (no code) or `#lightech` | **Lightech Console**: every company, stats, create / edit / suspend companies, open any company as Owner, audit log (Production). |
+| A company's team (e.g. AlphaLeaders) | app link (AlphaLeaders is the default) or app link + `#code` | Only their brand: logo, colours, terminology, data. No other company is ever shown. |
+| Lightech admins | app link + `#lightech` | **Lightech Console**: every company, stats, create / edit / suspend companies, open any company as Owner, audit log (Production). |
 
 Demo credentials (Demo & Local modes, password `demo`): `super@lightech.co.id`, `owner@alphaleaders.id`, `owner@piwa.id`, `owner@iplus.id`, plus one-click buttons per role on each company's sign-in page. Production creates its own one-time admin password during setup.
 
@@ -26,7 +26,7 @@ Demo credentials (Demo & Local modes, password `demo`): `super@lightech.co.id`, 
 
 | Area | What it does |
 |---|---|
-| **White-label tenants** | Per-company brand name, colour, tagline, terminology (Mentor → Coach/Teacher/PT/Consultant, Session → Class/Webinar/Workshop), funnel stages, session types, programs, sources. The company Owner configures it in **Settings**. |
+| **White-label tenants** | Per-company logo, icon, header colour (black & gold for AlphaLeaders), brand name, tagline, terminology (Mentor → Coach/Teacher/PT/Consultant, Session → Class/Webinar/Workshop), funnel stages, session types, programs, sources. The company Owner configures it in **Settings**. |
 | **Lightech Console** | Company list with users, leads, deals won, revenue, active clients, last activity. Create company from a template (with or without example data), set login code, suspend (blocks sign-in), reset owner password, delete. Manage Lightech admins. "Open" a company as its Owner with a visible Lightech banner. |
 | **Roles inside a company** | Owner, Admin/PA/CS, Senior Mentor, Mentor, Asst. Mentor (linked to a mentor), BD/Sales, Client. Menus and data scoped per role. |
 | **Lead & pipeline** | Lead form (duplicate WhatsApp check), drag-and-drop kanban, Won requires deal value, Lost requires a reason, stage SLA "idle" flag, next action + overdue. |
