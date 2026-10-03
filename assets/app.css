@@ -384,3 +384,9 @@ tr.clickable:hover td { background: var(--hover); }
   :root[data-noir]:not([data-theme="light"]) .btn-primary, :root[data-noir]:not([data-theme="light"]) .seg button.on, :root[data-noir]:not([data-theme="light"]) .lead-kpi { color: #141005; }
 }
 :root[data-noir][data-theme="dark"] { --bg: #0b0b0b; --card: #151515; --card-2: #1b1b1b; --line: #2a2a2a; --line-2: #3a3a3a; --soft: #1e1e1e; --hover: #1e1e1e; --accent: #d4a537 !important; }
+
+/* ---------- Payment schedule ---------- */
+.mini-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mini-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.mini-table td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.mini-table .right { text-align: right; }
