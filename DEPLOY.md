@@ -39,6 +39,12 @@ Paket default: link utama `lightech.co.id/alpha/` langsung membuka **login Alpha
 
 ## Langkah 3 — Ganti /alpha (5 menit)
 
+**Otomatis (1 perintah):** buat API token di cPanel → *Security → Manage API Tokens*, lalu:
+`CPANEL_HOST=lightech.co.id CPANEL_USER=<user> CPANEL_TOKEN=<token> node scripts/deploy-cpanel.mjs`
+Script ini membackup `alpha` → `alpha_backup_<tanggal>`, upload + extract zip, lalu cek situsnya live. Coba dulu dengan `--dry-run`.
+
+**Manual:**
+
 Di cPanel → **File Manager** → `public_html/`:
 1. **Backup dulu:** rename folder `alpha` → `alpha_backup_YYYYMMDD`. Jangan dihapus.
 2. Buat folder `alpha` baru, upload `lightech-alpha.zip`, lalu **Extract**.
