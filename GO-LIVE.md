@@ -15,8 +15,8 @@ Browser (HP / laptop)
 
 | File yang dipakai | Link (versi terkunci) |
 |---|---|
-| Skema database (SQL) | `__SQL_LINK__` |
-| Kode API (Edge Function) | `__EDGE_LINK__` |
+| Skema database (SQL) | https://raw.githubusercontent.com/oasys-lightrees/mentoring_app/e5a8fc647c5c8e4f1dc468c638143202ff9fa5d1/supabase/migrations/20261007000000_init.sql |
+| Kode API (Edge Function) | https://raw.githubusercontent.com/oasys-lightrees/mentoring_app/e5a8fc647c5c8e4f1dc468c638143202ff9fa5d1/supabase/functions/api/index.ts |
 
 ## Bagian A: Database & API di Supabase (±10 menit)
 
