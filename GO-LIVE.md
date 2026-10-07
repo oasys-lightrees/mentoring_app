@@ -1,80 +1,153 @@
-# Go-live AlphaLeaders: Google Sheet + Apps Script (tanpa hosting)
+# Go-live AlphaLeaders: Supabase (PostgreSQL) + Vercel
 
-Satu Google Sheet + satu file kode = app production yang bisa langsung dipakai tim AlphaLeaders.
-Data tersimpan di Sheet milik Anda, login per orang, setiap perubahan tercatat di audit log.
+Database SQL yang proper (PostgreSQL di Supabase), API server di Supabase Edge Function, dan website di Vercel.
+Semua gratis untuk mulai. Login per orang, data per company terpisah di server, dan setiap perubahan tercatat di audit log.
 
-- Kode yang dipakai (versi terkunci): https://raw.githubusercontent.com/oasys-lightrees/mentoring_app/b782c8713d336271a707437f93d0a7dd6fbe30de/server/Code.gs
-- Estimasi: 10 menit langkah teknis + 15 menit setup Owner
+```
+Browser (HP / laptop)
+  └─ Website (Vercel)                   index.html + assets  →  config: API_URL
+       └─ Supabase Edge Function "api"  server/core.js: login, hak akses per role, form lead, audit
+            └─ PostgreSQL               tabel companies, leads, sessions, clients, audit_log (RLS aktif)
+```
 
-## Bagian A: dikerjakan Claude in Chrome (atau manual), sekitar 10 menit
+- **Estimasi:** 20 menit teknis + 15 menit setup Owner
+- **Bisa dikerjakan Claude in Chrome:** prompt siap pakai ada di bagian paling bawah.
 
-1. Buka **https://sheets.new**. Beri nama Sheet: **AlphaLeaders CRM — Data**.
-2. Menu **Extensions → Apps Script**. Beri nama project: **AlphaLeaders CRM**.
-3. Di tab baru, buka link kode di atas, tekan **Ctrl+A**, lalu **Ctrl+C**.
-4. Kembali ke editor Apps Script, klik di dalam `Code.gs`, tekan **Ctrl+A**, **Ctrl+V**, lalu **Ctrl+S**.
-5. Di dropdown fungsi (sebelah tombol Run) pilih **`setup`**, lalu klik **Run**.
-   - Google minta izin: **Review permissions** → pilih akun → **Advanced** → **Go to AlphaLeaders CRM (unsafe)** → **Allow**.
-   - Peringatan "unsafe" itu normal untuk script buatan sendiri.
-6. Pilih **`setupAlphaLeaders`**, lalu **Run**.
-   - Execution log mencatat 13 baris password sekali pakai: 1 Lightech Super Admin + 12 tim AlphaLeaders.
-   - Log ini tetap tersimpan di menu **Executions**. Jangan disalin ke tempat lain.
-7. Klik **Deploy → New deployment**, lalu ikon gear → **Web app**.
-   - Description: `v1.2`
-   - Execute as: **Me**
-   - Who has access: **Anyone**
-   - Klik **Deploy**. Kalau diminta izin lagi, ikuti langkah 5.
-8. Salin **Web app URL** (berakhiran `/exec`).
-9. ✅ Cek: buka URL itu. Yang muncul harus halaman login AlphaLeaders lengkap dengan logo.
-10. ✅ Cek: buka URL yang sama dengan tambahan `?health=1`. Yang muncul harus `{"ok":true,...}`.
+| File yang dipakai | Link (versi terkunci) |
+|---|---|
+| Skema database (SQL) | `__SQL_LINK__` |
+| Kode API (Edge Function) | `__EDGE_LINK__` |
 
-## Bagian B: Owner (Coach Ferly), sekitar 15 menit
+## Bagian A: Database & API di Supabase (±10 menit)
 
-1. Buka Web app URL, login `ferly@alphaleaders.id` dengan password sekali pakai dari log, lalu buat password sendiri.
+1. Buka **https://supabase.com/dashboard** → login (pakai akun GitHub paling cepat).
+2. **New project**:
+   - Name: `lightech-mentoring`
+   - Database password: klik **Generate**, simpan di password manager
+   - Region: **Southeast Asia (Singapore)**, paling dekat ke Indonesia
+   - Klik **Create new project**, tunggu ±2 menit.
+3. Menu kiri **SQL Editor** → **New query**.
+   - Buka link **Skema database** di atas, **Ctrl+A**, **Ctrl+C**.
+   - Tempel di editor, klik **Run**.
+   - ✅ Cek: di bawah muncul satu baris **`SETUP CODE: XXXXXXXXXXXX`**. Catat kodenya. Kode ini dipakai sekali di Bagian C.
+4. Menu kiri **Edge Functions** → **Deploy a new function** → **Via Editor**.
+   - Nama function: **`api`** (huruf kecil, persis).
+   - Hapus contoh kode, lalu tempel isi link **Kode API** di atas.
+   - Klik **Deploy function**.
+5. Masih di function `api` → tab **Details / Settings** → matikan **Verify JWT** (Enforce JWT verification) → **Save**.
+   App melakukan login sendiri (email + password), jadi JWT Supabase tidak dipakai.
+6. Salin **Endpoint URL** function, bentuknya `https://<project-ref>.supabase.co/functions/v1/api`.
+   - ✅ Cek: buka URL itu di browser. Yang muncul: `{"ok":true,"service":"lightech-mentoring-app","version":"2.0.0"}`.
+
+## Bagian B: Website di Vercel (±5 menit)
+
+1. Buka **https://vercel.com/new** → login dengan GitHub.
+2. **Import** repository **`oasys-lightrees/mentoring_app`**.
+3. Di layar konfigurasi:
+   - Framework Preset: **Other** (build otomatis terbaca dari `vercel.json`)
+   - **Environment Variables**: Name `API_URL`, Value = Endpoint URL dari A.6
+   - Klik **Deploy**.
+4. Setelah selesai, buka domain Vercel-nya (mis. `https://mentoring-app-xxx.vercel.app`).
+   - ✅ Cek: yang muncul halaman **First-time setup**.
+5. Opsional, tapi disarankan: kunci API hanya untuk website ini.
+   Supabase → **Edge Functions → Secrets** → tambah `ALLOWED_ORIGINS` = domain Vercel (mis. `https://mentoring-app-xxx.vercel.app`, tanpa `/` di akhir).
+
+## Bagian C: Setup pertama (±2 menit, sekali saja)
+
+Di halaman **First-time setup**:
+
+1. **Setup code**: kode dari A.3.
+2. **Lightech Super Admin**: nama, email (default `super@lightech.co.id`), dan password sendiri (min. 10 karakter).
+3. Biarkan centang **"Sekaligus buat workspace AlphaLeaders dengan seluruh tim (12 orang)"**.
+4. Klik **Setup sekarang**.
+   - Muncul tabel 12 orang + **password sekali pakai** masing-masing.
+   - Klik **Salin semua** dan simpan sementara di tempat aman (password manager / catatan pribadi).
+   - ⚠️ Tabel ini **hanya tampil sekali**.
+5. Klik **Lanjut ke halaman login**.
+   - ✅ Cek: muncul login AlphaLeaders lengkap dengan logo.
+   - Setup code otomatis terhapus dari database. Setup tidak bisa diulang oleh siapa pun.
+
+Akun yang dibuat:
+
+| Role | Orang |
+|---|---|
+| Owner (+ coach) | Coach Ferly F Raya, Ferry Davira |
+| Admin / PA | Tami, Anita |
+| Coach | Josshhua Abraham, Anthony Sihombing, Wulansari Suharto, Charles Suryana, Malvin Haryanto, Rizki Esa |
+| BD / Sales | Julia, Paul |
+
+## Bagian D: Owner (Coach Ferly), sekitar 15 menit
+
+1. Buka link website, login `ferly@alphaleaders.id` dengan password sekali pakai, lalu buat password sendiri.
 2. **Settings → Paste dari Excel**:
    - Di file Investment Matrix, blok baris program (kolom Program sampai Inner Circle), copy, lalu paste.
    - ✅ Cek: 8 program dikenali.
 3. **Settings → Target sales & Self Compensation**: isi target per BD, komisi %, dan bonus %.
 4. **Team & Access**:
    - Ganti email placeholder `@alphaleaders.id` dengan email asli tiap orang. Email ini dipakai untuk login.
-   - Akun yang sudah dibuat: Ferly, Ferry (Owner + coach), Tami, Anita (PA), Josshhua, Anthony, Wulansari, Charles, Malvin, Rizki (coach), Julia, Paul (BD).
-5. Kirim ke tiap orang lewat **WA pribadi**:
-   - Web app URL
+5. Kirim ke tiap orang lewat **WA pribadi** (bukan grup), hanya bagiannya sendiri:
+   - link website
    - email masing-masing
    - password sekali pakai masing-masing
-   
+
    Saat login pertama, setiap orang wajib membuat password sendiri.
 6. Opsional: **Settings → Lead capture form → Form is live**.
-   - Link form: `<Web app URL>?form=alphaleaders&src=Instagram`
+   - Link form: `<link website>?form=alphaleaders&src=Instagram`
    - Ganti `src` per kampanye supaya sumber lead tercatat.
 
 ## Link yang perlu diingat
 
 | Untuk | Link |
 |---|---|
-| Tim AlphaLeaders | `<Web app URL>` |
-| Form lead publik | `<Web app URL>?form=alphaleaders&src=<kampanye>` |
-| Lightech Console | `<Web app URL>?view=lightech` (login `super@lightech.co.id`) |
-| Cek kesehatan | `<Web app URL>?health=1` |
+| Tim AlphaLeaders | `<link website>` |
+| Form lead publik | `<link website>?form=alphaleaders&src=<kampanye>` |
+| Lightech Console | `<link website>#lightech` (login Super Admin dari Bagian C) |
+| Cek kesehatan API | `<Endpoint URL>` (GET) |
+| Data mentah (read-only, untuk BI/report) | Supabase → **Table Editor** → `leads`, `sessions`, `clients`, `audit_log` |
 
 ## Update versi berikutnya
 
-Tempel kode baru di `Code.gs`, Save, lalu **Deploy → Manage deployments → Edit (ikon pensil) → Version: New version → Deploy**.
-URL `/exec` tetap sama dan data tidak tersentuh.
+- **Website**: otomatis. Setiap merge ke `main`, Vercel build ulang sendiri.
+- **API**: kalau `supabase/functions/api/index.ts` berubah, tempel ulang di editor function `api` lalu **Deploy**.
+- **Database**: file SQL baru di `supabase/migrations/` dijalankan di **SQL Editor**. Data lama tidak tersentuh.
 
 ## Kalau ada masalah
 
 | Gejala | Penyebab & solusi |
 |---|---|
-| Halaman putih / tanpa tampilan | Jaringan memblokir CDN. App otomatis mencoba CDN cadangan; coba refresh atau gunakan jaringan lain. |
-| "Cannot reach the server" | Deployment belum **Anyone**. Edit deployment, set Who has access = Anyone. |
+| "Server tidak bisa dihubungi" | `API_URL` di Vercel salah, atau Verify JWT masih ON (A.5). Perbaiki, lalu Vercel → **Redeploy**. |
+| Error 401 saat buka Endpoint URL | Verify JWT masih ON. Matikan (A.5). |
+| "Wrong setup code" | Salah ketik. Setelah 5× salah, terkunci 15 menit. Kode bisa dilihat lagi: SQL Editor → `select code from app_setup;` |
+| Halaman setup tidak muncul lagi | Normal: setup hanya sekali. Langsung login. |
 | Login gagal 5× | Akun dikunci 15 menit (pengaman brute force). Tunggu, atau Owner reset password di Team & Access. |
 | Lupa password | Owner reset di Team & Access. Orang itu wajib membuat password baru saat login berikutnya. |
+| Project Supabase "paused" | Paket gratis berhenti setelah 7 hari tanpa aktivitas. Klik **Restore**. Untuk produksi: upgrade **Pro** (tidak pernah pause + backup harian). |
 
-## Keamanan (GCG)
+## Keamanan & data (GCG)
 
-- Password di-hash (SHA-256 + salt) dan tidak pernah dikirim ke browser.
-- Password sekali pakai wajib diganti saat login pertama.
-- Setiap orang hanya melihat data sesuai perannya.
-- Audit log ada di tab `audit` pada Sheet.
-- Akses Sheet: hanya Owner + 1 cadangan. Tim tidak perlu akses Sheet karena semuanya lewat app.
-- Backup otomatis lewat Version history Google Sheet. Tambahan mingguan: File → Download → .xlsx.
+- Password di-hash **PBKDF2-SHA256** (120.000 iterasi, salt unik) dan tidak pernah dikirim ke browser.
+- Password sekali pakai wajib diganti saat login pertama. Sesi login berlaku 8 jam dan disimpan di server.
+- Setiap orang hanya melihat data sesuai perannya (BD hanya lead-nya sendiri; lead orang lain hanya angka untuk leaderboard).
+- **Row Level Security** aktif di semua tabel: key publik Supabase (anon) tidak bisa membaca data apa pun. Hanya API yang mengakses database.
+- `audit_log` **append-only**: database menolak edit atau hapus log.
+- Backup:
+  - Supabase Pro: backup otomatis harian.
+  - Tambahan mingguan (gratis): Owner → Settings → **Backup (JSON)**, simpan di folder arsip perusahaan.
+- Akses dashboard Supabase: hanya Lightech (Owner + 1 cadangan). Tim AlphaLeaders cukup lewat app.
+
+---
+
+## Prompt untuk Claude in Chrome
+
+Salin ke Claude in Chrome. Login Supabase/Vercel dilakukan sendiri bila diminta.
+
+```
+Kerjakan GO-LIVE.md di repo oasys-lightrees/mentoring_app, Bagian A dan B saja:
+1. supabase.com/dashboard: buat project "lightech-mentoring", region Singapore, generate database password (tampilkan ke saya untuk disimpan).
+2. SQL Editor: jalankan isi file dari link "Skema database" di GO-LIVE.md. Laporkan baris SETUP CODE ke saya.
+3. Edge Functions → Deploy a new function → Via Editor, nama "api", tempel isi link "Kode API", deploy. Matikan Verify JWT. Salin Endpoint URL.
+4. Buka Endpoint URL, pastikan JSON {"ok":true,...}.
+5. vercel.com/new: import oasys-lightrees/mentoring_app, env API_URL = Endpoint URL, deploy. Buka hasilnya, pastikan halaman "First-time setup" muncul.
+6. Supabase Edge Functions → Secrets: ALLOWED_ORIGINS = domain Vercel.
+Jangan isi halaman First-time setup. Itu saya kerjakan sendiri. Laporkan: link website, Endpoint URL, SETUP CODE.
+```

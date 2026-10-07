@@ -329,7 +329,7 @@
     return B;
   }
 
-  // Server backend (Google Apps Script API): sign-in, tenant isolation and audit happen on the server.
+  // Server backend (Supabase Edge Function + PostgreSQL): sign-in, tenant isolation and audit happen on the server.
   const ROUTES = ['dashboard', 'pipeline', 'leads', 'sessions', 'clients', 'team', 'settings', 'portal', 'reports', 'companies', 'admins', 'audit'];
   function makeRemoteBackend(url) {
     const K_TOKEN = 'mcrm:token';
@@ -382,8 +382,9 @@
       return null;
     };
     B.brand = (slug) => call('brand', { slug });
+    B.setup = (payload) => call('setup', payload);
     B.audit = (limit) => call('audit', { limit: limit || 200 });
-    // Mirrors canWrite_ in server/Code.gs so the browser never sends a change the server will refuse.
+    // Mirrors canWrite_ in server/core.js so the browser never sends a change the server will refuse.
     const allowed = (p, del) => {
       const ss = B.session; if (!ss) return false;
       if (ss.kind === 'platform') return !del || ss.role === 'owner' || !/^ws\/[^/]+$/.test(p);
@@ -980,7 +981,7 @@
   const refreshSync = () => setSync($('#sync').dataset.state || (Backend && Backend.mode === 'cloud' ? 'cloud' : 'local'));
 
   // Brand mark: the company's icon image when set, otherwise its initial.
-  // Brand images: https, data:image, or a packaged asset (resolved against assetBase when the app is served from Apps Script).
+  // Brand images: https, data:image, or a packaged asset (resolved against config.assetBase when the app is embedded from another host).
   const safeUrl = (u) => {
     u = String(u || '');
     if (/^assets\//.test(u)) return ((window.MCRM_CONFIG || {}).assetBase || '') + u;
@@ -1074,8 +1075,9 @@
     $('#btn-add-lead').hidden = !isStaff();
     $('#btn-add-session').hidden = !can.editSession();
     views[v]();
-    if (Backend.serverAuth && !imp && me.mustChange && !$('#modal').classList.contains('open')) passwordForm(true);
+    if (Backend.serverAuth && !imp && me.mustChange && !pwBusy && !$('#modal').classList.contains('open')) passwordForm(true);
   }
+  let pwBusy = false; // a password change is on its way to the server: do not ask again meanwhile
   // Change own password (server mode). First sign-in with a one-time password: required, cannot be dismissed.
   function passwordForm(required) {
     openModal(required ? tr('Create your own password', 'Buat password Anda sendiri') : tr('Change password', 'Ganti password'), `
@@ -1089,7 +1091,8 @@
       const fail = (m) => { setTimeout(() => { const el = $('#pw-err'); if (el) el.textContent = m; }, 0); return false; };
       if (String(fd.get('next')).length < 8) return fail(tr('Use at least 8 characters.', 'Minimal 8 karakter.'));
       if (fd.get('next') !== fd.get('again')) return fail(tr('The two new passwords do not match.', 'Dua password baru tidak sama.'));
-      let r; try { r = await Backend.call('password', { oldPassword: fd.get('old'), newPassword: fd.get('next') }); } catch (e) { r = { ok: false, message: tr('Cannot reach the server.', 'Server tidak bisa dihubungi.') }; }
+      let r; pwBusy = true;
+      try { r = await Backend.call('password', { oldPassword: fd.get('old'), newPassword: fd.get('next') }); } catch (e) { r = { ok: false, message: tr('Cannot reach the server.', 'Server tidak bisa dihubungi.') }; } finally { pwBusy = false; }
       if (!r.ok) return fail(r.error === 'invalid' && /Current/.test(r.message || '') ? tr('Current password is wrong.', 'Password saat ini salah.') : (r.message || tr('Could not change the password.', 'Password gagal diganti.')));
       delete $('#modal').dataset.locked;
       if (me) delete me.mustChange;
@@ -2959,9 +2962,64 @@
         me = null; applyBrand(); renderTenantLogin();
         return;
       }
+      if (b.error === 'setup_required') { renderSetup(); return; }
       LS.del(K_TENANT);
     }
     renderNeutralLogin();
+  }
+  // First run on a new database: whoever holds the one-time setup code (shown by the SQL migration) creates the
+  // Lightech Super Admin and, optionally, the AlphaLeaders workspace with the whole team.
+  function renderSetup(err, vals) {
+    vals = vals || {};
+    S = null; me = null; setTheme(null);
+    document.title = tr('First-time setup', 'Setup pertama');
+    showGate(`<div class="gate-card" style="max-width:460px">
+      <div><div class="gate-title">${tr('First-time setup', 'Setup pertama')}</div><div class="muted small">${tr('The database is ready and empty. Enter the setup code from the SQL editor to create the first administrator. This works only once.', 'Database sudah siap dan masih kosong. Masukkan setup code dari SQL Editor untuk membuat administrator pertama. Hanya bisa sekali.')}</div></div>
+      <form id="setup-form" class="form-stack" autocomplete="off">
+        <label class="field"><span>${tr('Setup code', 'Setup code')}</span><input id="f-setup-code" required autocomplete="off" spellcheck="false" style="font-family:monospace;letter-spacing:1px" value="${esc(vals.code || '')}"></label>
+        <label class="field"><span>${tr('Lightech Super Admin name', 'Nama Lightech Super Admin')}</span><input id="f-setup-name" required value="${esc(vals.name || 'Lightech Super Admin')}"></label>
+        <label class="field"><span>Email</span><input id="f-setup-email" type="email" required autocomplete="username" value="${esc(vals.email || 'super@lightech.co.id')}"></label>
+        <label class="field"><span>${tr('Password (min. 10 characters)', 'Password (min. 10 karakter)')}</span><input id="f-setup-pw" type="password" required minlength="10" autocomplete="new-password"></label>
+        <label class="field"><span>${tr('Repeat password', 'Ulangi password')}</span><input id="f-setup-pw2" type="password" required minlength="10" autocomplete="new-password"></label>
+        <label class="check"><input type="checkbox" id="f-setup-al" ${vals.al === false ? '' : 'checked'}> ${tr('Also create the AlphaLeaders workspace with the whole team (12 people)', 'Sekaligus buat workspace AlphaLeaders dengan seluruh tim (12 orang)')}</label>
+        ${err ? `<div class="gate-err">${esc(err)}</div>` : ''}
+        <button class="btn btn-primary" type="submit" style="justify-content:center;padding:10px">${tr('Set up', 'Setup sekarang')}</button>
+      </form>
+    </div>`);
+    $('#setup-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const v = { code: $('#f-setup-code').value.trim().toUpperCase(), name: $('#f-setup-name').value.trim(), email: $('#f-setup-email').value.trim().toLowerCase(), password: $('#f-setup-pw').value, alphaleaders: $('#f-setup-al').checked };
+      const back = (msg) => renderSetup(msg, { code: v.code, name: v.name, email: v.email, al: v.alphaleaders });
+      if (v.password !== $('#f-setup-pw2').value) { back(tr('The two passwords do not match.', 'Kedua password tidak sama.')); return; }
+      showLoading(tr('Setting up…', 'Menyiapkan…'));
+      let r; try { r = await Backend.setup(v); } catch (x) { r = { ok: false, message: tr('Cannot reach the server.', 'Server tidak bisa dihubungi.') }; }
+      if (!r.ok) {
+        if (r.error === 'forbidden') { boot(); return; } // someone finished setup in the meantime
+        back(r.error === 'invalid' && /code/i.test(r.message || '') ? tr('Wrong setup code.', 'Setup code salah.') : r.error === 'locked' ? serverError(r) : (r.message || tr('Setup failed.', 'Setup gagal.')));
+        return;
+      }
+      renderSetupDone(r);
+    };
+  }
+  function renderSetupDone(r) {
+    const team = r.team || [];
+    const link = appLink();
+    const role = (r) => ({ superadmin: 'Owner', admin: 'Admin / PA', mentor: 'Coach', bd: 'BD / Sales' }[r] || r);
+    const lines = team.map((a) => `${a.name} (${role(a.role)})\n${link}\nEmail: ${a.email}\n${tr('One-time password', 'Password sekali pakai')}: ${a.password}`);
+    showGate(`<div class="gate-card" style="max-width:720px">
+      <div><div class="gate-title">✅ ${tr('Setup complete', 'Setup selesai')}</div>
+      <div class="muted small">${tr('Lightech Super Admin', 'Lightech Super Admin')}: <b>${esc(r.admin.email)}</b> · ${tr('sign in at', 'masuk lewat')} <code>${esc(link)}#lightech</code></div></div>
+      ${team.length ? `<div class="gate-err" style="background:#fff7e6;color:#8a5300;border-color:#f3d39b">${tr('These one-time passwords are shown ONCE. Copy them now and send each person only their own block by private WhatsApp. Everyone creates their own password at first sign-in.', 'Password sekali pakai ini hanya tampil SEKALI. Salin sekarang, lalu kirim ke tiap orang hanya bagiannya sendiri lewat WhatsApp pribadi. Saat login pertama, setiap orang wajib membuat password sendiri.')}</div>
+      <div class="table-wrap"><table id="setup-team"><thead><tr><th>${tr('Name', 'Nama')}</th><th>Role</th><th>Email</th><th>${tr('One-time password', 'Password sekali pakai')}</th></tr></thead><tbody>
+        ${team.map((a) => `<tr><td>${esc(a.name)}</td><td>${esc(role(a.role))}</td><td>${esc(a.email)}</td><td><code data-otp="${esc(a.email)}">${esc(a.password)}</code></td></tr>`).join('')}
+      </tbody></table></div>
+      <textarea id="setup-out" readonly rows="5" style="width:100%;font-family:monospace;font-size:12px">${esc(lines.join('\n\n'))}</textarea>
+      <button class="btn" type="button" id="setup-copy" style="justify-content:center">${tr('Copy all', 'Salin semua')}</button>` : ''}
+      <button class="btn btn-primary" type="button" id="setup-done" style="justify-content:center;padding:10px">${tr('Continue to sign-in', 'Lanjut ke halaman login')}</button>
+    </div>`);
+    const cp = $('#setup-copy');
+    if (cp) cp.onclick = async () => { const ta = $('#setup-out'); try { await navigator.clipboard.writeText(ta.value); } catch (x) { ta.select(); document.execCommand('copy'); } toast(tr('Copied.', 'Tersalin.')); };
+    $('#setup-done').onclick = () => { if (team.length && !confirm(tr('Did you copy the one-time passwords? They will not be shown again.', 'Sudah menyalin password sekali pakai? Password ini tidak akan ditampilkan lagi.'))) return; showLoading(); boot(); };
   }
   function renderOffline() {
     showGate(`<div class="gate-card">
@@ -2980,7 +3038,7 @@
     showLoading(tr('Signing in…', 'Masuk…'));
     let r;
     try { r = await Backend.login(email, pw, slug); } catch (e) { r = { ok: false, message: tr('Cannot reach the server.', 'Server tidak bisa dihubungi.') }; }
-    if (!r.ok) { onError(serverError(r)); return; }
+    if (!r.ok) { if (r.error === 'setup_required') { renderSetup(); return; } onError(serverError(r)); return; }
     if (r.session.kind === 'platform') LS.del(K_TENANT);
     location.hash = '';
     await bootServer();
@@ -2990,7 +3048,7 @@
   // Single-brand deployments: the bare link opens this company's sign-in (Lightech still uses #lightech).
   const DEFAULT_TENANT = String((window.MCRM_CONFIG || {}).defaultTenant || '').toLowerCase();
   let formMode = null;
-  // When served by Apps Script the app runs in an iframe: the page's own link and its ?form=/&src= come from the server.
+  // When the app is embedded (iframe), the host page can pass its own link and ?form=/&src= through config.params.
   const cfgParams = (window.MCRM_CONFIG || {}).params || {};
   const urlParam = (k) => String(cfgParams[k] || new URLSearchParams(location.search).get(k) || '');
   const appLink = () => (window.MCRM_CONFIG || {}).publicUrl || location.href.split('#')[0].split('?')[0];
@@ -3050,6 +3108,6 @@
     renderNeutralLogin();
   }
 
-  window.__mcrm = { get state() { return S; }, get backend() { return Backend; }, get platform() { return platform; }, sha256 };
+  window.__mcrm = { get state() { return S; }, get me() { return me; }, get backend() { return Backend; }, get platform() { return platform; }, sha256 };
   boot();
 })();

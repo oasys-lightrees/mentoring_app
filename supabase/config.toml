@@ -1,0 +1,4 @@
+# Supabase CLI settings for this project (used by `supabase functions deploy api`).
+# The app signs people in itself (email + password → server token), so the gateway must not require a Supabase JWT.
+[functions.api]
+verify_jwt = false

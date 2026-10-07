@@ -1,6 +1,7 @@
-// Builds the static site for lightech.co.id/alpha (or any static host).
+// Builds the static site (Vercel, Netlify, Cloudflare Pages, cPanel at lightech.co.id/alpha, …).
 //   node scripts/build-deploy.mjs                 → dist/alpha/ + dist/lightech-alpha.zip (apiUrl left empty)
-//   API_URL=https://script.google.com/macros/s/…/exec node scripts/build-deploy.mjs   → apiUrl filled in
+//   API_URL=https://<project>.supabase.co/functions/v1/api node scripts/build-deploy.mjs   → apiUrl filled in
+// On Vercel / Netlify the build runs from vercel.json / netlify.toml with API_URL set as an environment variable.
 import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync, readdirSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -19,7 +20,7 @@ const v = hash.digest('hex').slice(0, 10);
 
 const api = process.env.API_URL || '';
 const tenant = process.env.DEFAULT_TENANT ?? 'alphaleaders'; // the bare link opens this company; DEFAULT_TENANT= (empty) for the neutral sign-in
-writeFileSync(join(out, 'assets', 'config.js'), `/* Deployment config — apiUrl: Apps Script Web App URL (…/exec); defaultTenant: company opened by the bare link (Lightech uses #lightech). */\nwindow.MCRM_CONFIG = window.MCRM_CONFIG || { apiUrl: ${JSON.stringify(api)}, defaultTenant: ${JSON.stringify(tenant)} };\n`);
+writeFileSync(join(out, 'assets', 'config.js'), `/* Deployment config — apiUrl: Supabase Edge Function URL (https://<project>.supabase.co/functions/v1/api); defaultTenant: company opened by the bare link (Lightech uses #lightech). */\nwindow.MCRM_CONFIG = window.MCRM_CONFIG || { apiUrl: ${JSON.stringify(api)}, defaultTenant: ${JSON.stringify(tenant)} };\n`);
 mkdirSync(join(out, 'assets', 'brands'), { recursive: true });
 readdirSync(join(root, 'assets', 'brands')).forEach((f) => copyFileSync(join(root, 'assets', 'brands', f), join(out, 'assets', 'brands', f)));
 
@@ -85,7 +86,23 @@ AddType application/manifest+json .webmanifest
 `);
 writeFileSync(join(out, 'VERSION.txt'), `Lightech Mentoring App\nbuild ${v}\nbuilt ${new Date().toISOString()}\napiUrl ${api ? 'set' : 'EMPTY — edit assets/config.js'}\ndefaultTenant ${tenant || '(none)'}\n`);
 
+// Netlify / Cloudflare Pages: security headers (the .htaccess above is for Apache / cPanel).
+writeFileSync(join(out, '_headers'), `/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+/index.html
+  Cache-Control: no-cache, must-revalidate
+/assets/config.js
+  Cache-Control: no-cache, must-revalidate
+/sw.js
+  Cache-Control: no-cache, must-revalidate
+`);
+
+// Zip for manual upload (cPanel File Manager, Netlify Drop). Skipped where python3 is not installed (CI builds).
 const zip = join(root, 'dist', 'lightech-alpha.zip');
 rmSync(zip, { force: true });
-execFileSync('python3', ['-c', `import shutil; shutil.make_archive(${JSON.stringify(zip.replace(/\.zip$/, ''))}, 'zip', ${JSON.stringify(out)})`]);
-console.log(`dist/alpha built (assets v=${v}, apiUrl ${api ? 'set' : 'empty'}) → ${zip}`);
+let zipped = true;
+try { execFileSync('python3', ['-c', `import shutil; shutil.make_archive(${JSON.stringify(zip.replace(/\.zip$/, ''))}, 'zip', ${JSON.stringify(out)})`], { stdio: 'ignore' }); } catch (e) { zipped = false; }
+console.log(`dist/alpha built (assets v=${v}, apiUrl ${api ? 'set' : 'empty'})${zipped ? ' → ' + zip : ''}`);
