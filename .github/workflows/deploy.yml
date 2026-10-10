@@ -28,7 +28,7 @@ permissions:
 env:
   SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF || secrets.SUPABASE_PROJECT_REF }}
   SITE_URL: ${{ vars.SITE_URL || 'https://lightech.co.id/alpha/' }}
-  FTP_DIR: ${{ vars.FTP_DIR || 'public_html/alpha' }}
+  FTP_DIR: ${{ vars.FTP_DIR }}  # empty = detected from SITE_URL
   FTP_TLS_VERIFY: ${{ vars.FTP_TLS_VERIFY || 'yes' }}
 
 jobs:
@@ -128,7 +128,7 @@ jobs:
             if [ "$got" = "$want" ]; then echo "Live: $want at $SITE_URL"; exit 0; fi
             sleep 10
           done
-          echo "::error::$SITE_URL does not serve $want (got: '$got'). Check FTP_DIR."; exit 1
+          echo "::error::$SITE_URL does not serve $want (got: '$got'). Set the FTP_DIR variable."; exit 1
 
   rollback-web:
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'rollback-web'
