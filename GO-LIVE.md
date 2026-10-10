@@ -5,7 +5,7 @@
 | Bagian | Dipakai | Biaya |
 |---|---|---|
 | Database + API | **Supabase** (PostgreSQL + Edge Function) | Rp0 (Free). Naik ke Pro $25/bln saat data asli sudah jalan rutin. |
-| Website | **Hosting yang sudah ada** untuk `lightech.co.id` (IDwebhost / Hostinger), folder `/alpha` | Rp0 tambahan |
+| Website | **Hosting yang sudah ada** untuk `lightech.co.id` (Niagahoster/Hostinger), folder `/alpha` | Rp0 tambahan |
 | Deploy | **GitHub Actions**: setiap perubahan otomatis dites lalu di-deploy | Rp0 (repo publik) |
 | AWS, Vercel | Tidak dipakai. AWS terlalu rumit & mahal untuk tahap ini; Vercel tidak bisa melayani path `lightech.co.id/alpha`. | – |
 
@@ -29,13 +29,19 @@ Setelah setup sekali (±20 menit), semua update cukup lewat prompt. Tidak perlu 
 4. **Account → Access Tokens** (https://supabase.com/dashboard/account/tokens) → **Generate new token**, nama `github-deploy`. Ini jadi `SUPABASE_ACCESS_TOKEN`.
 
 ### A.2 Akun FTP di hosting lightech.co.id
-Di panel hosting tempat **domain lightech.co.id** aktif:
-- **IDwebhost (cPanel)**: **Files → FTP Accounts** → buat akun, mis. `deploy@lightech.co.id`, Directory `public_html`.
-- **Hostinger (hPanel)**: **Files → FTP Accounts**. Catat host, username, password.
+Hasil cek WHOIS & DNS (workflow **Domain check**, Oktober 2026):
 
-Catat juga folder yang dilayani `lightech.co.id/alpha`, dilihat dari root akun FTP:
-- cPanel: biasanya `public_html/alpha`
-- Hostinger: biasanya `domains/lightech.co.id/public_html/alpha`, atau `public_html/alpha`
+| Item | Hasil |
+|---|---|
+| Registrar domain | PT JC Indonesia (reseller). Domain aktif sampai 12 Sep 2027. |
+| DNS & hosting | **Niagahoster / Hostinger** (`ns1/ns2.niagahoster.com`), server `srv174.niagahoster.com` (45.90.230.248) |
+| FTP | Pure-FTPd + TLS. Sertifikat valid untuk **`srv174.niagahoster.com`**, tidak untuk `ftp.lightech.co.id`. |
+| Email | Google Workspace (tidak tersentuh oleh deploy) |
+
+Langkah:
+1. Login **hPanel Niagahoster/Hostinger** → pilih website **lightech.co.id** → **Files → FTP Accounts**.
+2. Pakai akun FTP utama (catat username + reset/simpan password), atau buat akun baru khusus deploy.
+3. Folder tujuan dideteksi otomatis oleh deploy: `domains/lightech.co.id/public_html/alpha`, lalu `public_html/alpha`, lalu `alpha`.
 
 ### A.3 Simpan di GitHub (sekali)
 Buka **https://github.com/oasys-lightrees/mentoring_app/settings/secrets/actions**.
@@ -47,7 +53,7 @@ Tab **Secrets** → **New repository secret**:
 | `SUPABASE_ACCESS_TOKEN` | token dari A.1.4 |
 | `SUPABASE_DB_PASSWORD` | database password dari A.1.2 |
 | `SUPABASE_PROJECT_REF` | project-ref dari A.1.3 |
-| `FTP_SERVER` | host FTP, mis. `ftp.lightech.co.id` |
+| `FTP_SERVER` | `srv174.niagahoster.com` (pakai nama ini, bukan `ftp.lightech.co.id`, supaya sertifikat TLS valid) |
 | `FTP_USERNAME` | username FTP |
 | `FTP_PASSWORD` | password FTP |
 
@@ -55,7 +61,7 @@ Tab **Variables**, hanya kalau berbeda dari default:
 
 | Name | Default |
 |---|---|
-| `FTP_DIR` | `public_html/alpha` |
+| `FTP_DIR` | kosong = deteksi otomatis |
 | `SITE_URL` | `https://lightech.co.id/alpha/` |
 
 ### A.4 Deploy pertama
@@ -136,8 +142,8 @@ Data lama tidak tersentuh. Versi website sebelumnya disimpan sebagai `alpha__pre
 | Gejala | Penyebab & solusi |
 |---|---|
 | Job **api** / **web** di Actions bertuliskan "skipped / not configured" | Secret belum lengkap (Bagian A.3). Lengkapi, lalu **Run workflow**. |
-| Job **web** gagal di "Check the live site" | `FTP_DIR` tidak menunjuk ke folder yang dilayani `lightech.co.id/alpha`. Hostinger biasanya `domains/lightech.co.id/public_html/alpha`, IDwebhost/cPanel `public_html/alpha`. |
-| Job **web** gagal koneksi FTP (certificate) | Tambah variable `FTP_TLS_VERIFY` = `no` (sertifikat FTP shared hosting sering atas nama server, bukan domain). |
+| Job **web** gagal di "Check the live site" | Folder hasil deteksi otomatis bukan yang dilayani `lightech.co.id/alpha`. Isi variable `FTP_DIR`, mis. `domains/lightech.co.id/public_html/alpha`. |
+| Job **web** gagal koneksi FTP (certificate) | `FTP_SERVER` harus `srv174.niagahoster.com`, bukan `ftp.lightech.co.id`. |
 | "Server tidak bisa dihubungi" di app | Lihat job **api** di Actions. Kalau hijau, buka `https://<project-ref>.supabase.co/functions/v1/api` harus `{"ok":true}`. |
 | "Wrong setup code" | Salah ketik. Setelah 5× salah, terkunci 15 menit. Kode bisa dilihat lagi: SQL Editor → `select code from app_setup;` |
 | Halaman setup tidak muncul lagi | Normal: setup hanya sekali. Langsung login. |
@@ -167,13 +173,12 @@ Salin ke Claude in Chrome. Login ke Supabase, hosting, dan GitHub dilakukan send
 Kerjakan GO-LIVE.md Bagian A di repo oasys-lightrees/mentoring_app:
 1. supabase.com/dashboard: buat project "lightech-mentoring", region Singapore, generate database password.
    Catat project-ref dari URL. Buat access token "github-deploy" di Account → Access Tokens.
-2. Cari di panel hosting mana (IDwebhost atau Hostinger) domain lightech.co.id aktif. Buat akun FTP untuk deploy.
-   Cari folder yang dilayani lightech.co.id/alpha (relatif dari root akun FTP).
+2. hPanel Niagahoster/Hostinger → website lightech.co.id → Files → FTP Accounts: siapkan username + password FTP.
 3. github.com/oasys-lightrees/mentoring_app/settings/secrets/actions: isi secret SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD,
-   SUPABASE_PROJECT_REF, FTP_SERVER, FTP_USERNAME, FTP_PASSWORD. Isi variable FTP_DIR kalau bukan public_html/alpha.
+   SUPABASE_PROJECT_REF, FTP_SERVER (= srv174.niagahoster.com), FTP_USERNAME, FTP_PASSWORD.
 4. GitHub → Actions → "Test & deploy" → Run workflow (main). Tunggu semua hijau. Kalau ada job merah, laporkan pesan errornya.
 5. Buka https://lightech.co.id/alpha/ dan pastikan halaman "First-time setup" muncul. Jangan diisi.
-Jangan tampilkan password/token di chat. Laporkan: project-ref, hosting yang dipakai, FTP_DIR, status Actions.
+Jangan tampilkan password/token di chat. Laporkan: project-ref dan status Actions.
 ```
 
 ## Lampiran: jalur manual (tanpa GitHub Actions)
