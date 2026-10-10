@@ -30,3 +30,9 @@ jobs:
           for u in "https://$DOMAIN/" "https://$DOMAIN/alpha/"; do echo "== $u"; curl -sS -o /dev/null -D - -m 20 "$u" | grep -Ei '^(HTTP|server|x-powered-by|platform|panel|location|x-litespeed|x-turbo)' || true; done
       - name: FTP banner
         run: timeout 15 bash -c "exec 3<>/dev/tcp/ftp.$DOMAIN/21; head -c 200 <&3" || echo "no FTP banner"
+      - name: FTP TLS certificate (which hostname deploys can verify)
+        run: |
+          for h in "ftp.$DOMAIN" "$DOMAIN" "$(dig +short -x "$(dig +short "$DOMAIN" A | head -1)" | sed 's/\.$//')"; do
+            echo "== $h"
+            echo QUIT | timeout 20 openssl s_client -starttls ftp -connect "$h:21" -servername "$h" -verify_hostname "$h" 2>&1 | grep -E 'subject=|Verify return code|verify error' | head -4 || true
+          done
