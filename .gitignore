@@ -2,3 +2,5 @@ dist/
 .seed/
 node_modules/
 *.png
+tests/.tmp/
+!assets/brands/*.png

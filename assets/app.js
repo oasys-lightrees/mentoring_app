@@ -329,7 +329,7 @@
     return B;
   }
 
-  // Server backend (Google Apps Script API): sign-in, tenant isolation and audit happen on the server.
+  // Server backend (Supabase Edge Function + PostgreSQL): sign-in, tenant isolation and audit happen on the server.
   const ROUTES = ['dashboard', 'pipeline', 'leads', 'sessions', 'clients', 'team', 'settings', 'portal', 'reports', 'companies', 'admins', 'audit'];
   function makeRemoteBackend(url) {
     const K_TOKEN = 'mcrm:token';
@@ -382,8 +382,9 @@
       return null;
     };
     B.brand = (slug) => call('brand', { slug });
+    B.setup = (payload) => call('setup', payload);
     B.audit = (limit) => call('audit', { limit: limit || 200 });
-    // Mirrors canWrite_ in server/Code.gs so the browser never sends a change the server will refuse.
+    // Mirrors canWrite_ in server/core.js so the browser never sends a change the server will refuse.
     const allowed = (p, del) => {
       const ss = B.session; if (!ss) return false;
       if (ss.kind === 'platform') return !del || ss.role === 'owner' || !/^ws\/[^/]+$/.test(p);
@@ -980,7 +981,12 @@
   const refreshSync = () => setSync($('#sync').dataset.state || (Backend && Backend.mode === 'cloud' ? 'cloud' : 'local'));
 
   // Brand mark: the company's icon image when set, otherwise its initial.
-  const safeUrl = (u) => (/^(https:\/\/|assets\/|data:image\/)/.test(String(u || '')) ? String(u) : '');
+  // Brand images: https, data:image, or a packaged asset (resolved against config.assetBase when the app is embedded from another host).
+  const safeUrl = (u) => {
+    u = String(u || '');
+    if (/^assets\//.test(u)) return ((window.MCRM_CONFIG || {}).assetBase || '') + u;
+    return /^(https:\/\/|data:image\/)/.test(u) ? u : '';
+  };
   const markHTML = (c) => (safeUrl(c.mark) ? `<img src="${esc(safeUrl(c.mark))}" alt="">` : esc(initials(c.brandName).slice(0, 1) || 'C'));
   function setTheme(c) {
     const root = document.documentElement.style;
@@ -1058,8 +1064,9 @@
     const v = currentView();
     $('#tabs').innerHTML = tabsFor().map(([k, t]) => `<a href="#${k}" data-view="${k}" class="${k === v ? 'active' : ''}">${esc(t)}</a>`).join('');
     const imp = !!me.platform;
-    $('#me-chip').innerHTML = `<span class="avatar">${esc(initials(me.name))}</span><span><div class="me-name">${esc(me.name)}</div><div class="me-role">${esc(roleName(me.role))}</div></span>${imp ? '' : `<button type="button" id="btn-logout">${tr('Sign out', 'Keluar')}</button>`}`;
+    $('#me-chip').innerHTML = `<span class="avatar">${esc(initials(me.name))}</span><span><div class="me-name">${esc(me.name)}</div><div class="me-role">${esc(roleName(me.role))}</div></span>${imp ? '' : `${Backend.serverAuth ? `<button type="button" id="btn-pw" title="${esc(tr('Change password', 'Ganti password'))}">${tr('Password', 'Password')}</button>` : ''}<button type="button" id="btn-logout">${tr('Sign out', 'Keluar')}</button>`}`;
     if ($('#btn-logout')) $('#btn-logout').onclick = logout;
+    if ($('#btn-pw')) $('#btn-pw').onclick = () => passwordForm(false);
     const back = $('#console-back');
     back.hidden = !imp; back.textContent = '← Lightech Console'; back.onclick = backToConsole;
     const ban = $('#imp-banner');
@@ -1068,6 +1075,33 @@
     $('#btn-add-lead').hidden = !isStaff();
     $('#btn-add-session').hidden = !can.editSession();
     views[v]();
+    if (Backend.serverAuth && !imp && me.mustChange && !pwBusy && !$('#modal').classList.contains('open')) passwordForm(true);
+  }
+  let pwBusy = false; // a password change is on its way to the server: do not ask again meanwhile
+  // Change own password (server mode). First sign-in with a one-time password: required, cannot be dismissed.
+  function passwordForm(required) {
+    openModal(required ? tr('Create your own password', 'Buat password Anda sendiri') : tr('Change password', 'Ganti password'), `
+      ${required ? `<p class="muted" style="margin:0 0 10px">${esc(tr('You signed in with a one-time password. Choose your own to continue; only you will know it.', 'Anda masuk dengan password sekali pakai. Buat password sendiri untuk melanjutkan; hanya Anda yang tahu.'))}</p>` : ''}
+      <label class="field"><span>${tr('Current password', 'Password saat ini')}</span><input type="password" name="old" id="f-pw-old" required autocomplete="current-password"></label>
+      <label class="field"><span>${tr('New password (min. 8 characters)', 'Password baru (min. 8 karakter)')}</span><input type="password" name="next" id="f-pw-new" required minlength="8" autocomplete="new-password"></label>
+      <label class="field"><span>${tr('Repeat new password', 'Ulangi password baru')}</span><input type="password" name="again" id="f-pw-again" required minlength="8" autocomplete="new-password"></label>
+      <div class="err" id="pw-err"></div>
+      <div class="modal-foot">${required ? `<button type="button" class="btn" id="pw-out">${esc(tr('Sign out', 'Keluar'))}</button>` : `<button type="button" class="btn" data-close-modal>${tr('Cancel', 'Batal')}</button>`}<button type="submit" class="btn btn-primary">${esc(tr('Save password', 'Simpan password'))}</button></div>`,
+    async (fd) => {
+      const fail = (m) => { setTimeout(() => { const el = $('#pw-err'); if (el) el.textContent = m; }, 0); return false; };
+      if (String(fd.get('next')).length < 8) return fail(tr('Use at least 8 characters.', 'Minimal 8 karakter.'));
+      if (fd.get('next') !== fd.get('again')) return fail(tr('The two new passwords do not match.', 'Dua password baru tidak sama.'));
+      let r; pwBusy = true;
+      try { r = await Backend.call('password', { oldPassword: fd.get('old'), newPassword: fd.get('next') }); } catch (e) { r = { ok: false, message: tr('Cannot reach the server.', 'Server tidak bisa dihubungi.') }; } finally { pwBusy = false; }
+      if (!r.ok) return fail(r.error === 'invalid' && /Current/.test(r.message || '') ? tr('Current password is wrong.', 'Password saat ini salah.') : (r.message || tr('Could not change the password.', 'Password gagal diganti.')));
+      delete $('#modal').dataset.locked;
+      if (me) delete me.mustChange;
+      toast(tr('Password saved. Welcome!', 'Password tersimpan. Selamat datang!'));
+    });
+    if (required) {
+      $('#modal').dataset.locked = '1';
+      $('#pw-out').onclick = () => { delete $('#modal').dataset.locked; closeModal(); logout(); };
+    }
   }
 
   // =====================================================================
@@ -2022,7 +2056,7 @@
           <div class="card-title">${tr('Lead capture form', 'Form lead capture')}</div>
           <div class="hint">${tr('A public form for your website, Instagram bio or ads. Every submission lands in the pipeline and is assigned to the BD with the fewest open leads.', 'Form publik untuk website, bio Instagram atau iklan. Setiap kiriman masuk pipeline dan otomatis dibagi ke BD dengan lead aktif paling sedikit.')}</div>
           <label class="check mt"><input type="checkbox" id="set-publicform" ${c.publicForm ? 'checked' : ''}> ${tr('Form is live', 'Form aktif')}</label>
-          ${c.publicForm ? `<div class="copy-row mt"><input id="form-link" readonly value="${esc(location.href.split('#')[0].split('?')[0] + '?form=' + S.slug)}"><button class="btn btn-sm" type="button" id="copy-form">${tr('Copy', 'Salin')}</button><a class="btn btn-sm" target="_blank" rel="noopener" href="${esc('?form=' + S.slug)}">${tr('Open', 'Buka')}</a></div>
+          ${c.publicForm ? `<div class="copy-row mt"><input id="form-link" readonly value="${esc(appLink() + '?form=' + S.slug)}"><button class="btn btn-sm" type="button" id="copy-form">${tr('Copy', 'Salin')}</button><a class="btn btn-sm" target="_blank" rel="noopener" href="${esc(appLink() + '?form=' + S.slug)}">${tr('Open', 'Buka')}</a></div>
           <div class="hint">${tr('Track campaigns by adding &src=Instagram (must match a lead source).', 'Lacak kampanye dengan menambah &src=Instagram (harus sama dengan sumber lead).')}</div>` : ''}
         </div>
         <div class="card">
@@ -2798,7 +2832,7 @@
       const err = (m) => { const el = $('#pf-err'); el.hidden = false; el.textContent = m; btn.disabled = false; };
       if (waNumber(v.phone).length < 9) { err(tr('Please enter a valid WhatsApp number.', 'Masukkan nomor WhatsApp yang valid.')); return; }
       let r;
-      try { r = await submitPublicLead(slug, info, Object.assign({ source: new URLSearchParams(location.search).get('src') || '' }, v)); } catch (x) { r = { ok: false, error: 'network' }; }
+      try { r = await submitPublicLead(slug, info, Object.assign({ source: urlParam('src') }, v)); } catch (x) { r = { ok: false, error: 'network' }; }
       if (r.ok) { if (formMode) formMode.done = true; renderPublicForm(slug, info, true); return; }
       err(r.error === 'busy' ? tr('Too many submissions right now. Please try again in a few minutes.', 'Terlalu banyak kiriman. Coba lagi beberapa menit lagi.') : r.error === 'network' ? tr('Cannot reach the server. Check your connection.', 'Server tidak bisa dihubungi. Cek koneksi Anda.') : tr('Could not send. Please check your details.', 'Gagal mengirim. Cek kembali data Anda.'));
     };
@@ -2816,7 +2850,7 @@
     const st = openStages()[0];
     const prog = program(v.programId);
     const nowIso = new Date().toISOString();
-    S.leads.unshift({ id: uid('L'), name: v.name.trim().slice(0, 80), phone: v.phone.trim(), email: v.email || '', company: v.company || '', source: S.config.sources.includes(v.source) ? v.source : 'Website form', ownerId: pickOwner(), programId: prog ? prog.id : '', value: prog ? Number(prog.price) || 0 : 0,
+    S.leads.unshift({ id: uid('L'), name: v.name.trim().slice(0, 80), phone: v.phone.trim(), email: v.email || '', company: v.company || '', source: S.config.sources.find((x) => x.toLowerCase() === String(v.source || '').toLowerCase()) || String(v.source || '').replace(/[^A-Za-z0-9 _.\-/&]/g, '').slice(0, 40) || 'Website form', ownerId: pickOwner(), programId: prog ? prog.id : '', value: prog ? Number(prog.price) || 0 : 0,
       stageId: st.id, nextAction: 'WhatsApp follow-up (web form)', nextActionDate: todayISO(), notes: v.message || '', createdAt: nowIso, updatedAt: nowIso, createdBy: 'web-form', history: [{ at: nowIso, from: null, to: st.id, note: 'Web form', by: 'web-form' }] });
     if (Backend.flush) { await Backend.flush(S); if (Backend.idle) await Backend.idle(); } else Backend.save();
     if (Backend.close) Backend.close();
@@ -2928,9 +2962,64 @@
         me = null; applyBrand(); renderTenantLogin();
         return;
       }
+      if (b.error === 'setup_required') { renderSetup(); return; }
       LS.del(K_TENANT);
     }
     renderNeutralLogin();
+  }
+  // First run on a new database: whoever holds the one-time setup code (shown by the SQL migration) creates the
+  // Lightech Super Admin and, optionally, the AlphaLeaders workspace with the whole team.
+  function renderSetup(err, vals) {
+    vals = vals || {};
+    S = null; me = null; setTheme(null);
+    document.title = tr('First-time setup', 'Setup pertama');
+    showGate(`<div class="gate-card" style="max-width:460px">
+      <div><div class="gate-title">${tr('First-time setup', 'Setup pertama')}</div><div class="muted small">${tr('The database is ready and empty. Enter the setup code from the SQL editor to create the first administrator. This works only once.', 'Database sudah siap dan masih kosong. Masukkan setup code dari SQL Editor untuk membuat administrator pertama. Hanya bisa sekali.')}</div></div>
+      <form id="setup-form" class="form-stack" autocomplete="off">
+        <label class="field"><span>${tr('Setup code', 'Setup code')}</span><input id="f-setup-code" required autocomplete="off" spellcheck="false" style="font-family:monospace;letter-spacing:1px" value="${esc(vals.code || '')}"></label>
+        <label class="field"><span>${tr('Lightech Super Admin name', 'Nama Lightech Super Admin')}</span><input id="f-setup-name" required value="${esc(vals.name || 'Lightech Super Admin')}"></label>
+        <label class="field"><span>Email</span><input id="f-setup-email" type="email" required autocomplete="username" value="${esc(vals.email || 'super@lightech.co.id')}"></label>
+        <label class="field"><span>${tr('Password (min. 10 characters)', 'Password (min. 10 karakter)')}</span><input id="f-setup-pw" type="password" required minlength="10" autocomplete="new-password"></label>
+        <label class="field"><span>${tr('Repeat password', 'Ulangi password')}</span><input id="f-setup-pw2" type="password" required minlength="10" autocomplete="new-password"></label>
+        <label class="check"><input type="checkbox" id="f-setup-al" ${vals.al === false ? '' : 'checked'}> ${tr('Also create the AlphaLeaders workspace with the whole team (12 people)', 'Sekaligus buat workspace AlphaLeaders dengan seluruh tim (12 orang)')}</label>
+        ${err ? `<div class="gate-err">${esc(err)}</div>` : ''}
+        <button class="btn btn-primary" type="submit" style="justify-content:center;padding:10px">${tr('Set up', 'Setup sekarang')}</button>
+      </form>
+    </div>`);
+    $('#setup-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const v = { code: $('#f-setup-code').value.trim().toUpperCase(), name: $('#f-setup-name').value.trim(), email: $('#f-setup-email').value.trim().toLowerCase(), password: $('#f-setup-pw').value, alphaleaders: $('#f-setup-al').checked };
+      const back = (msg) => renderSetup(msg, { code: v.code, name: v.name, email: v.email, al: v.alphaleaders });
+      if (v.password !== $('#f-setup-pw2').value) { back(tr('The two passwords do not match.', 'Kedua password tidak sama.')); return; }
+      showLoading(tr('Setting up…', 'Menyiapkan…'));
+      let r; try { r = await Backend.setup(v); } catch (x) { r = { ok: false, message: tr('Cannot reach the server.', 'Server tidak bisa dihubungi.') }; }
+      if (!r.ok) {
+        if (r.error === 'forbidden') { boot(); return; } // someone finished setup in the meantime
+        back(r.error === 'invalid' && /code/i.test(r.message || '') ? tr('Wrong setup code.', 'Setup code salah.') : r.error === 'locked' ? serverError(r) : (r.message || tr('Setup failed.', 'Setup gagal.')));
+        return;
+      }
+      renderSetupDone(r);
+    };
+  }
+  function renderSetupDone(r) {
+    const team = r.team || [];
+    const link = appLink();
+    const role = (r) => ({ superadmin: 'Owner', admin: 'Admin / PA', mentor: 'Coach', bd: 'BD / Sales' }[r] || r);
+    const lines = team.map((a) => `${a.name} (${role(a.role)})\n${link}\nEmail: ${a.email}\n${tr('One-time password', 'Password sekali pakai')}: ${a.password}`);
+    showGate(`<div class="gate-card" style="max-width:720px">
+      <div><div class="gate-title">✅ ${tr('Setup complete', 'Setup selesai')}</div>
+      <div class="muted small">${tr('Lightech Super Admin', 'Lightech Super Admin')}: <b>${esc(r.admin.email)}</b> · ${tr('sign in at', 'masuk lewat')} <code>${esc(link)}#lightech</code></div></div>
+      ${team.length ? `<div class="gate-err" style="background:#fff7e6;color:#8a5300;border-color:#f3d39b">${tr('These one-time passwords are shown ONCE. Copy them now and send each person only their own block by private WhatsApp. Everyone creates their own password at first sign-in.', 'Password sekali pakai ini hanya tampil SEKALI. Salin sekarang, lalu kirim ke tiap orang hanya bagiannya sendiri lewat WhatsApp pribadi. Saat login pertama, setiap orang wajib membuat password sendiri.')}</div>
+      <div class="table-wrap"><table id="setup-team"><thead><tr><th>${tr('Name', 'Nama')}</th><th>Role</th><th>Email</th><th>${tr('One-time password', 'Password sekali pakai')}</th></tr></thead><tbody>
+        ${team.map((a) => `<tr><td>${esc(a.name)}</td><td>${esc(role(a.role))}</td><td>${esc(a.email)}</td><td><code data-otp="${esc(a.email)}">${esc(a.password)}</code></td></tr>`).join('')}
+      </tbody></table></div>
+      <textarea id="setup-out" readonly rows="5" style="width:100%;font-family:monospace;font-size:12px">${esc(lines.join('\n\n'))}</textarea>
+      <button class="btn" type="button" id="setup-copy" style="justify-content:center">${tr('Copy all', 'Salin semua')}</button>` : ''}
+      <button class="btn btn-primary" type="button" id="setup-done" style="justify-content:center;padding:10px">${tr('Continue to sign-in', 'Lanjut ke halaman login')}</button>
+    </div>`);
+    const cp = $('#setup-copy');
+    if (cp) cp.onclick = async () => { const ta = $('#setup-out'); try { await navigator.clipboard.writeText(ta.value); } catch (x) { ta.select(); document.execCommand('copy'); } toast(tr('Copied.', 'Tersalin.')); };
+    $('#setup-done').onclick = () => { if (team.length && !confirm(tr('Did you copy the one-time passwords? They will not be shown again.', 'Sudah menyalin password sekali pakai? Password ini tidak akan ditampilkan lagi.'))) return; showLoading(); boot(); };
   }
   function renderOffline() {
     showGate(`<div class="gate-card">
@@ -2949,7 +3038,7 @@
     showLoading(tr('Signing in…', 'Masuk…'));
     let r;
     try { r = await Backend.login(email, pw, slug); } catch (e) { r = { ok: false, message: tr('Cannot reach the server.', 'Server tidak bisa dihubungi.') }; }
-    if (!r.ok) { onError(serverError(r)); return; }
+    if (!r.ok) { if (r.error === 'setup_required') { renderSetup(); return; } onError(serverError(r)); return; }
     if (r.session.kind === 'platform') LS.del(K_TENANT);
     location.hash = '';
     await bootServer();
@@ -2959,6 +3048,10 @@
   // Single-brand deployments: the bare link opens this company's sign-in (Lightech still uses #lightech).
   const DEFAULT_TENANT = String((window.MCRM_CONFIG || {}).defaultTenant || '').toLowerCase();
   let formMode = null;
+  // When the app is embedded (iframe), the host page can pass its own link and ?form=/&src= through config.params.
+  const cfgParams = (window.MCRM_CONFIG || {}).params || {};
+  const urlParam = (k) => String(cfgParams[k] || new URLSearchParams(location.search).get(k) || '');
+  const appLink = () => (window.MCRM_CONFIG || {}).publicUrl || location.href.split('#')[0].split('?')[0];
   async function bootForm(slug) {
     let info = null;
     try {
@@ -2978,11 +3071,12 @@
   }
   async function boot() {
     bindChrome();
+    if (!location.hash && urlParam('view')) { try { history.replaceState(null, '', '#' + urlParam('view').toLowerCase()); } catch (e) { location.hash = '#' + urlParam('view').toLowerCase(); } }
     document.documentElement.lang = LANG;
     showLoading();
     if (!Backend) Backend = await pickBackend();
     setSync(Backend.mode === 'local' ? 'local' : 'cloud');
-    const formSlug = (new URLSearchParams(location.search).get('form') || '').toLowerCase();
+    const formSlug = urlParam('form').toLowerCase();
     if (formSlug) { await bootForm(formSlug); return; }
     if (Backend.serverAuth) { try { await bootServer(); } catch (e) { renderNeutralLogin(tr('Cannot reach the server. Check your connection and reload.', 'Server tidak bisa dihubungi. Cek koneksi lalu muat ulang.')); } return; }
     try { platform = await Backend.getPlatform(); } catch (e) { platform = null; }
@@ -3014,6 +3108,6 @@
     renderNeutralLogin();
   }
 
-  window.__mcrm = { get state() { return S; }, get backend() { return Backend; }, get platform() { return platform; }, sha256 };
+  window.__mcrm = { get state() { return S; }, get me() { return me; }, get backend() { return Backend; }, get platform() { return platform; }, sha256 };
   boot();
 })();

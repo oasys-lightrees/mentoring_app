@@ -8,7 +8,7 @@ How Lightech Mentoring App meets good corporate governance (GCG) expectations fo
 |---|---|---|
 | **Transparency** | Every change is traceable | Server-side **audit log** (who, what, when, which company); lead stage history with actor; Lightech mode banner when Lightech staff view a company |
 | **Accountability** | Clear owner for every decision and record | Each lead has a PIC; each client has a coach + assistant; Owner role per company; Lightech Super Admin vs Admin |
-| **Responsibility** | Protect client data | Server-side sign-in, salted SHA-256 password hashes never sent to browsers, 5-attempt lockout, 6-hour sessions, security headers |
+| **Responsibility** | Protect client data | Server-side sign-in, PBKDF2-SHA256 password hashes (120k iterations, unique salt) never sent to browsers, 5-attempt lockout, 8-hour server-side sessions, security headers |
 | **Independence** | Companies cannot see or influence each other | Tenant isolation enforced on the server for every read and write; login code & suspension controlled by Lightech only |
 | **Fairness** | Same rules for everyone, measured on results | Role-based access matrix; leaderboard on revenue closed (SUKA); Self Compensation computed by one published formula, each BD sees their own pay line |
 
@@ -34,12 +34,12 @@ A = accountable, R = responsible, C = consulted, I = informed.
 | Data minimisation | ✅ No ID numbers, no payment data stored |
 | Access control & confidentiality | ✅ Server-side RBAC + tenant isolation; least privilege inside a company: BDs see other BDs' leads only as numbers (no names, phones, notes), clients see only their own record |
 | Lawful collection | ✅ Public lead form states the purpose under the submit button; only collected when the company switches the form on |
-| Integrity & traceability | ✅ Audit log, stage history |
+| Integrity & traceability | ✅ Audit log (append-only, enforced by a database trigger), stage history, every record keeps who/when of its last change |
 | Data portability / subject access | ✅ JSON backup and CSV export per company |
 | Deletion on request | ✅ Delete lead / client / account; delete company (Super Admin) |
 | Breach detection | ⚠️ Manual: failed-login entries in audit log. Roadmap: alert to WhatsApp/email |
 | Data processing agreement with each company | ⚠️ To prepare: Lightech = processor, company = controller |
-| Data residency | ⚠️ Google Workspace region. Roadmap option: Indonesian region on production database |
+| Data residency | ⚠️ Supabase Singapore region (closest available). Option: self-hosted PostgreSQL in an Indonesian data centre (same code: server/pg.js runs on any Postgres) |
 
 ## 4. Change management
 
@@ -52,8 +52,8 @@ A = accountable, R = responsible, C = consulted, I = informed.
 
 | Limit today | Risk | Plan |
 |---|---|---|
-| Google Sheets as database | Performance beyond ~20k rows | Migrate to Supabase/Postgres with row-level security |
-| Polling sync every 15 s | Small delay between users | Realtime channel on production database |
+| Polling sync every 15 s | Small delay between users | Supabase Realtime channel |
+| Supabase free plan | Project pauses after 7 idle days; no daily backups | Supabase Pro for production (daily backups, no pausing) + weekly JSON export |
 | No 2FA | Account takeover if a password leaks | TOTP 2FA for Owners and Lightech admins |
 | Company-level audit view | Owners rely on Lightech for audit exports | Audit tab inside each company for Owners |
 | Claude Artifact demo link | Readable by anyone with the link; outside users cannot save | Use only for demos with example data; production is lightech.co.id/alpha + server |

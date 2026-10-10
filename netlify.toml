@@ -1,0 +1,4 @@
+# Netlify: connect the GitHub repo, then set API_URL (Site settings → Environment variables).
+[build]
+  command = "node scripts/build-deploy.mjs"
+  publish = "dist/alpha"

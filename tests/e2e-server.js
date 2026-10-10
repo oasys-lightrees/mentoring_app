@@ -1,19 +1,19 @@
-// Browser end-to-end: the real app (index.html) talking to server/Code.gs through the harness.
+// Browser end-to-end: the real app (index.html) talking to the real server (server/pg.js) on PostgreSQL.
 let pw; try { pw = require('playwright'); } catch (e) { pw = require('/opt/node-tools/node_modules/playwright'); }
 const path = require('path');
-const { createServer } = require('./gas-harness');
-const API = 'https://api.example.test/exec';
+const { createServer, dropAll } = require('./pg-harness');
+const API = 'https://api.example.test/functions/v1/api';
 let BASE = process.env.BASE;
 
 (async () => {
   const web = BASE ? null : await require('./static-server').serve(process.env.ROOT || path.join(__dirname, '..'));
   if (web) BASE = web.url + 'index.html';
-  const srv = createServer(); srv.setup();
-  const adminPw = srv.logs.find((l) => l.includes('one-time password')).match(/one-time password: (\S+)/)[1];
+  const srv = await createServer();
+  const { adminPw } = await srv.setup();
   const b = await pw.chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 1360, height: 900 } });
   await ctx.addInitScript(`window.MCRM_CONFIG = { apiUrl: '${API}' };`);
-  await ctx.route(API, (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(srv.post(route.request().postData())) }));
+  await ctx.route(API, async (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(await srv.post(route.request().postData())) }));
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   const txt = async () => (await p.textContent('body')).replace(/\s+/g, ' ');
@@ -31,8 +31,8 @@ let BASE = process.env.BASE;
     await p.click('#modal-form button[type=submit]');
     await p.waitForFunction((s) => !document.querySelector('#app').hidden && document.querySelector('tbody') && document.querySelector('tbody').textContent.includes('#' + s), slug);
   }
-  const metas = srv.post({ action: 'login', email: 'super@lightech.co.id', password: adminPw });
-  const docsCount = srv.post({ action: 'changes', token: metas.token, since: 0 }).docs.length;
+  const metas = (await srv.post({ action: 'login', email: 'super@lightech.co.id', password: adminPw }));
+  const docsCount = (await srv.post({ action: 'changes', token: metas.token, since: 0 })).docs.length;
   ok(`companies with example data saved on the server (${docsCount} records)`, docsCount > 100);
   await p.click('a[href="#audit"]'); await p.waitForFunction(() => document.querySelector('tbody') && document.querySelector('tbody').textContent.includes('Saved'));
   ok('audit log tab lists server activity', true);
@@ -46,8 +46,8 @@ let BASE = process.env.BASE;
   ok('owner sees no Lightech console button', !(await p.isVisible('#console-back')));
   await p.click('#btn-add-lead'); await p.fill('#f-lead-name', 'Server Lead'); await p.fill('#f-lead-phone', '0811000111'); await p.click('#modal-form button[type=submit]');
   await p.waitForFunction(() => document.querySelector('#sync-text').textContent.includes('saved'));
-  const own = srv.post({ action: 'login', email: 'owner@alphaleaders.id', password: 'demo', slug: 'alphaleaders' });
-  const leads = srv.post({ action: 'list', token: own.token, collection: 'ws/' + own.session.wsId + '/leads' }).docs;
+  const own = (await srv.post({ action: 'login', email: 'owner@alphaleaders.id', password: 'demo', slug: 'alphaleaders' }));
+  const leads = (await srv.post({ action: 'list', token: own.token, collection: 'ws/' + own.session.wsId + '/leads' })).docs;
   ok('new lead stored on the server', leads.some((d) => d.data.name === 'Server Lead'));
   await p.goto(BASE + '#settings'); await p.waitForSelector('#set-brand');
   await p.fill('#set-brand', 'AlphaLeaders Pro'); await p.press('#set-brand', 'Tab');
@@ -60,7 +60,7 @@ let BASE = process.env.BASE;
   ok('BD can still sign in after the owner saved config (hashes kept)', true);
   await p.goto(BASE + '#leads'); await p.waitForSelector('tbody');
   const rows = await p.$$eval('tbody tr.clickable', (r) => r.length);
-  const allLeads = srv.post({ action: 'list', token: own.token, collection: 'ws/' + own.session.wsId + '/leads' }).docs.length;
+  const allLeads = (await srv.post({ action: 'list', token: own.token, collection: 'ws/' + own.session.wsId + '/leads' })).docs.length;
   ok(`BD sees only own leads (${rows} of ${allLeads})`, rows > 0 && rows < allLeads);
   const bdView = await p.evaluate(() => { const st = window.__mcrm.state; const r = st.leads.filter((l) => l.restricted); return { restricted: r.length, leaked: r.some((l) => l.name || l.phone) }; });
   ok(`server sends other BDs' leads as numbers only (${bdView.restricted}), no names or phones`, bdView.restricted > 0 && !bdView.leaked);
@@ -73,7 +73,7 @@ let BASE = process.env.BASE;
   const p2 = await ctx.newPage();
   await p2.goto(BASE + '#alphaleaders'); await p2.reload(); await p2.waitForSelector('[data-demo]');
   await p2.click('[data-demo]:has-text("Owner")'); await p2.waitForSelector('.kpis');
-  srv.post({ action: 'batch', token: own.token, ops: [{ op: 'set', path: `ws/${own.session.wsId}/leads/L-live`, data: { id: 'L-live', name: 'Live Update Lead', stageId: 'new', history: [{ at: new Date().toISOString(), from: null, to: 'new' }], createdAt: new Date().toISOString(), value: 0 } }] });
+  (await srv.post({ action: 'batch', token: own.token, ops: [{ op: 'set', path: `ws/${own.session.wsId}/leads/L-live`, data: { id: 'L-live', name: 'Live Update Lead', stageId: 'new', history: [{ at: new Date().toISOString(), from: null, to: 'new' }], createdAt: new Date().toISOString(), value: 0 } }] }));
   await p2.goto(BASE + '#leads');
   await p2.waitForFunction(() => document.body.textContent.includes('Live Update Lead'), null, { timeout: 25000 });
   ok('another user\'s new lead appears without reload (polling)', true);
@@ -97,7 +97,7 @@ let BASE = process.env.BASE;
   // Session expires mid-work: edits are kept, user re-enters the password, save completes
   await p.goto('about:blank'); await p.goto(BASE + '#alphaleaders'); await p.waitForSelector('[data-demo]');
   await p.click('[data-demo]:has-text("Owner")'); await p.waitForSelector('.kpis');
-  srv.cache.clear(); // server forgets every session token
+  await srv.sql`delete from kv where key like 'tok:%'`; // server forgets every session token
   await p.click('#btn-add-lead'); await p.fill('#f-lead-name', 'Kept After Expiry'); await p.fill('#f-lead-phone', '0811222333'); await p.click('#modal-form button[type=submit]');
   await p.waitForSelector('#f-reauth-pw', { timeout: 10000 });
   ok('expired session asks for the password instead of throwing work away', (await txt()).includes('Session expired'));
@@ -108,8 +108,8 @@ let BASE = process.env.BASE;
   ok('wrong password keeps the dialog open with an error', await p.isVisible('#f-reauth-pw'));
   await p.fill('#f-reauth-pw', 'demo'); await p.click('#modal-form button[type=submit]');
   await p.waitForFunction(() => document.querySelector('#sync-text').textContent.includes('saved'), null, { timeout: 10000 });
-  const own2 = srv.post({ action: 'login', email: 'owner@alphaleaders.id', password: 'demo', slug: 'alphaleaders' });
-  ok('unsaved lead reaches the server after re-auth', srv.post({ action: 'list', token: own2.token, collection: 'ws/' + own2.session.wsId + '/leads' }).docs.some((d) => d.data.name === 'Kept After Expiry'));
+  const own2 = (await srv.post({ action: 'login', email: 'owner@alphaleaders.id', password: 'demo', slug: 'alphaleaders' }));
+  ok('unsaved lead reaches the server after re-auth', (await srv.post({ action: 'list', token: own2.token, collection: 'ws/' + own2.session.wsId + '/leads' })).docs.some((d) => d.data.name === 'Kept After Expiry'));
 
   // Server unreachable: no silent sign-out
   const p3 = await ctx.newPage(); p3.on('pageerror', (e) => errs.push(e.message));
@@ -122,6 +122,8 @@ let BASE = process.env.BASE;
 
   ok('no page errors', errs.length === 0);
   console.log(`\n${n} browser checks passed`);
+  ok('no server errors', srv.errors.length === 0);
   await b.close();
   if (web) web.close();
-})().catch((e) => { console.error(e); process.exit(1); });
+  await srv.close(); await dropAll();
+})().catch(async (e) => { console.error(e); try { await dropAll(); } catch (x) { /* ignore */ } process.exit(1); });
