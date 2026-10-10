@@ -1,0 +1,142 @@
+# Test → deploy, on every push to main (and on demand from the Actions tab).
+#   1. test        all checks on a real PostgreSQL + Chromium
+#   2. api         Supabase: database migrations + Edge Function "api"     (skipped until the Supabase secrets exist)
+#   3. web         build the site and upload it to lightech.co.id/alpha    (skipped until the FTP secrets exist)
+# Rollback: Actions → "Test & deploy" → Run workflow → action = rollback-web.
+# Secrets / variables: see GO-LIVE.md. Nothing secret is ever printed to the (public) logs.
+name: Test & deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to run
+        type: choice
+        options: [deploy, rollback-web]
+        default: deploy
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'production' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF || secrets.SUPABASE_PROJECT_REF }}
+  SITE_URL: ${{ vars.SITE_URL || 'https://lightech.co.id/alpha/' }}
+  FTP_DIR: ${{ vars.FTP_DIR || 'public_html/alpha' }}
+  FTP_TLS_VERIFY: ${{ vars.FTP_TLS_VERIFY || 'yes' }}
+
+jobs:
+  test:
+    if: github.event_name != 'workflow_dispatch' || inputs.action == 'deploy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PG_TEST_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+
+  api:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        run: |
+          if [ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$SUPABASE_DB_PASSWORD" ] && [ -n "$SUPABASE_PROJECT_REF" ]; then echo "ready=yes" >> "$GITHUB_OUTPUT";
+          else echo "ready=no" >> "$GITHUB_OUTPUT"; echo "::notice::Supabase not configured yet (SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD, SUPABASE_PROJECT_REF). API deploy skipped."; fi
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.ready == 'yes'
+      - uses: supabase/setup-cli@v1
+        if: steps.cfg.outputs.ready == 'yes'
+        with:
+          version: latest
+      - name: Database migrations
+        if: steps.cfg.outputs.ready == 'yes'
+        run: |
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase db push --include-all
+      - name: Edge Function "api"
+        if: steps.cfg.outputs.ready == 'yes'
+        run: |
+          ORIGIN=$(node -e "console.log(new URL(process.env.SITE_URL).origin)")
+          supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" ALLOWED_ORIGINS="$ORIGIN" > /dev/null
+          supabase functions deploy api --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+      - name: Health check
+        if: steps.cfg.outputs.ready == 'yes'
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS "https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/api" | tee /dev/stderr | grep -q '"ok":true'; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::API health check failed"; exit 1
+
+  web:
+    needs: [test, api]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        run: |
+          if [ -n "$FTP_SERVER" ] && [ -n "$FTP_USERNAME" ] && [ -n "$FTP_PASSWORD" ] && [ -n "$SUPABASE_PROJECT_REF" ]; then echo "ready=yes" >> "$GITHUB_OUTPUT";
+          else echo "ready=no" >> "$GITHUB_OUTPUT"; echo "::notice::Website hosting not configured yet (FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, SUPABASE_PROJECT_REF). Website deploy skipped."; fi
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.ready == 'yes'
+      - name: Build
+        if: steps.cfg.outputs.ready == 'yes'
+        run: API_URL="https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/api" node scripts/build-deploy.mjs
+      - name: Upload (previous version kept as <dir>__prev)
+        if: steps.cfg.outputs.ready == 'yes'
+        run: sudo apt-get install -y -qq lftp > /dev/null && ./scripts/deploy-ftp.sh
+      - name: Check the live site serves this build
+        if: steps.cfg.outputs.ready == 'yes'
+        run: |
+          want=$(sed -n 2p dist/alpha/VERSION.txt)
+          for i in 1 2 3 4 5 6; do
+            got=$(curl -fsS "${SITE_URL%/}/VERSION.txt?t=$(date +%s)" | sed -n 2p || true)
+            if [ "$got" = "$want" ]; then echo "Live: $want at $SITE_URL"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::$SITE_URL does not serve $want (got: '$got'). Check FTP_DIR."; exit 1
+
+  rollback-web:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'rollback-web'
+    runs-on: ubuntu-latest
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y -qq lftp > /dev/null && ./scripts/deploy-ftp.sh rollback

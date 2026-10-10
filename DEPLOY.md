@@ -1,6 +1,6 @@
 # Deploy ke lightech.co.id/alpha (atau domain sendiri)
 
-> **Mulai dari [GO-LIVE.md](GO-LIVE.md)**: database + API di Supabase, website di Vercel. Runbook ini untuk memindahkan website ke `lightech.co.id/alpha` (cPanel) atau domain lain. API dan database tetap di Supabase, data tidak berpindah.
+> **Jalur utama: [GO-LIVE.md](GO-LIVE.md)**. GitHub Actions otomatis men-deploy database + API ke Supabase dan website ke `lightech.co.id/alpha` (FTP) setiap ada perubahan di `main`. Runbook di bawah ini adalah **jalur manual** (upload zip) kalau Actions tidak bisa dipakai.
 
 Estimasi waktu: **±15 menit**. Setiap langkah punya titik cek, dan ada jalur rollback.
 

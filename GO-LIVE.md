@@ -1,62 +1,77 @@
-# Go-live AlphaLeaders: Supabase (PostgreSQL) + Vercel
+# Go-live AlphaLeaders: Supabase + hosting sendiri (lightech.co.id/alpha), deploy otomatis
 
-Database SQL yang proper (PostgreSQL di Supabase), API server di Supabase Edge Function, dan website di Vercel.
-Semua gratis untuk mulai. Login per orang, data per company terpisah di server, dan setiap perubahan tercatat di audit log.
+**Pilihan stack (paling murah & simple):**
+
+| Bagian | Dipakai | Biaya |
+|---|---|---|
+| Database + API | **Supabase** (PostgreSQL + Edge Function) | Rp0 (Free). Naik ke Pro $25/bln saat data asli sudah jalan rutin. |
+| Website | **Hosting yang sudah ada** untuk `lightech.co.id` (IDwebhost / Hostinger), folder `/alpha` | Rp0 tambahan |
+| Deploy | **GitHub Actions**: setiap perubahan otomatis dites lalu di-deploy | Rp0 (repo publik) |
+| AWS, Vercel | Tidak dipakai. AWS terlalu rumit & mahal untuk tahap ini; Vercel tidak bisa melayani path `lightech.co.id/alpha`. | – |
 
 ```
-Browser (HP / laptop)
-  └─ Website (Vercel)                   index.html + assets  →  config: API_URL
-       └─ Supabase Edge Function "api"  server/core.js: login, hak akses per role, form lead, audit
-            └─ PostgreSQL               tabel companies, leads, sessions, clients, audit_log (RLS aktif)
+Prompt ke Claude Code ──► GitHub (main) ──► GitHub Actions: test ─┬─► Supabase: migrasi DB + API
+                                                                  └─► FTP: lightech.co.id/alpha (+ cek versi live)
+Browser ──► lightech.co.id/alpha ──► https://<project-ref>.supabase.co/functions/v1/api ──► PostgreSQL
 ```
 
-- **Estimasi:** 20 menit teknis + 15 menit setup Owner
-- **Bisa dikerjakan Claude in Chrome:** prompt siap pakai ada di bagian paling bawah.
+Setelah setup sekali (±20 menit), semua update cukup lewat prompt. Tidak perlu buka cPanel, Supabase, atau GitHub lagi.
 
-| File yang dipakai | Link (versi terkunci) |
-|---|---|
-| Skema database (SQL) | https://raw.githubusercontent.com/oasys-lightrees/mentoring_app/e5a8fc647c5c8e4f1dc468c638143202ff9fa5d1/supabase/migrations/20261007000000_init.sql |
-| Kode API (Edge Function) | https://raw.githubusercontent.com/oasys-lightrees/mentoring_app/e5a8fc647c5c8e4f1dc468c638143202ff9fa5d1/supabase/functions/api/index.ts |
+## Bagian A: Setup sekali (±20 menit, bisa dikerjakan Claude in Chrome)
 
-## Bagian A: Database & API di Supabase (±10 menit)
-
-1. Buka **https://supabase.com/dashboard** → login (pakai akun GitHub paling cepat).
+### A.1 Supabase (database + API)
+1. Buka **https://supabase.com/dashboard** → login dengan GitHub.
 2. **New project**:
    - Name: `lightech-mentoring`
-   - Database password: klik **Generate**, simpan di password manager
-   - Region: **Southeast Asia (Singapore)**, paling dekat ke Indonesia
-   - Klik **Create new project**, tunggu ±2 menit.
-3. Menu kiri **SQL Editor** → **New query**.
-   - Buka link **Skema database** di atas, **Ctrl+A**, **Ctrl+C**.
-   - Tempel di editor, klik **Run**.
-   - ✅ Cek: di bawah muncul satu baris **`SETUP CODE: XXXXXXXXXXXX`**. Catat kodenya. Kode ini dipakai sekali di Bagian C.
-4. Menu kiri **Edge Functions** → **Deploy a new function** → **Via Editor**.
-   - Nama function: **`api`** (huruf kecil, persis).
-   - Hapus contoh kode, lalu tempel isi link **Kode API** di atas.
-   - Klik **Deploy function**.
-5. Masih di function `api` → tab **Details / Settings** → matikan **Verify JWT** (Enforce JWT verification) → **Save**.
-   App melakukan login sendiri (email + password), jadi JWT Supabase tidak dipakai.
-6. Salin **Endpoint URL** function, bentuknya `https://<project-ref>.supabase.co/functions/v1/api`.
-   - ✅ Cek: buka URL itu di browser. Yang muncul: `{"ok":true,"service":"lightech-mentoring-app","version":"2.0.0"}`.
+   - Database password: klik **Generate**, **simpan**. Ini jadi secret `SUPABASE_DB_PASSWORD`.
+   - Region: **Southeast Asia (Singapore)**.
+3. Setelah jadi, lihat URL dashboard: `supabase.com/dashboard/project/<project-ref>`. Kode `<project-ref>` (20 huruf) jadi `SUPABASE_PROJECT_REF`.
+4. **Account → Access Tokens** (https://supabase.com/dashboard/account/tokens) → **Generate new token**, nama `github-deploy`. Ini jadi `SUPABASE_ACCESS_TOKEN`.
 
-## Bagian B: Website di Vercel (±5 menit)
+### A.2 Akun FTP di hosting lightech.co.id
+Di panel hosting tempat **domain lightech.co.id** aktif:
+- **IDwebhost (cPanel)**: **Files → FTP Accounts** → buat akun, mis. `deploy@lightech.co.id`, Directory `public_html`.
+- **Hostinger (hPanel)**: **Files → FTP Accounts**. Catat host, username, password.
 
-1. Buka **https://vercel.com/new** → login dengan GitHub.
-2. **Import** repository **`oasys-lightrees/mentoring_app`**.
-3. Di layar konfigurasi:
-   - Framework Preset: **Other** (build otomatis terbaca dari `vercel.json`)
-   - **Environment Variables**: Name `API_URL`, Value = Endpoint URL dari A.6
-   - Klik **Deploy**.
-4. Setelah selesai, buka domain Vercel-nya (mis. `https://mentoring-app-xxx.vercel.app`).
-   - ✅ Cek: yang muncul halaman **First-time setup**.
-5. Opsional, tapi disarankan: kunci API hanya untuk website ini.
-   Supabase → **Edge Functions → Secrets** → tambah `ALLOWED_ORIGINS` = domain Vercel (mis. `https://mentoring-app-xxx.vercel.app`, tanpa `/` di akhir).
+Catat juga folder yang dilayani `lightech.co.id/alpha`, dilihat dari root akun FTP:
+- cPanel: biasanya `public_html/alpha`
+- Hostinger: biasanya `domains/lightech.co.id/public_html/alpha`, atau `public_html/alpha`
+
+### A.3 Simpan di GitHub (sekali)
+Buka **https://github.com/oasys-lightrees/mentoring_app/settings/secrets/actions**.
+
+Tab **Secrets** → **New repository secret**:
+
+| Name | Isi |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | token dari A.1.4 |
+| `SUPABASE_DB_PASSWORD` | database password dari A.1.2 |
+| `SUPABASE_PROJECT_REF` | project-ref dari A.1.3 |
+| `FTP_SERVER` | host FTP, mis. `ftp.lightech.co.id` |
+| `FTP_USERNAME` | username FTP |
+| `FTP_PASSWORD` | password FTP |
+
+Tab **Variables**, hanya kalau berbeda dari default:
+
+| Name | Default |
+|---|---|
+| `FTP_DIR` | `public_html/alpha` |
+| `SITE_URL` | `https://lightech.co.id/alpha/` |
+
+### A.4 Deploy pertama
+GitHub → **Actions** → **Test & deploy** → **Run workflow** (branch `main`).
+- ✅ Cek: tiga job **test**, **api**, **web** hijau. Job **web** baru hijau setelah `lightech.co.id/alpha` benar-benar menyajikan versi terbaru.
+- ✅ Cek: buka **https://lightech.co.id/alpha/**. Halaman **First-time setup** muncul.
+- Versi lama di `/alpha` tidak dihapus. Folder itu disimpan sebagai `alpha__prev`.
+
+## Bagian B: (otomatis)
+Tidak ada langkah manual. Setiap merge ke `main` menjalankan A.4 sendiri.
 
 ## Bagian C: Setup pertama (±2 menit, sekali saja)
 
-Di halaman **First-time setup**:
+Buka **https://lightech.co.id/alpha/**. Di halaman **First-time setup**:
 
-1. **Setup code**: kode dari A.3.
+1. **Setup code**: Supabase → **SQL Editor** → jalankan `select code from app_setup;` → salin kodenya.
 2. **Lightech Super Admin**: nama, email (default `super@lightech.co.id`), dan password sendiri (min. 10 karakter).
 3. Biarkan centang **"Sekaligus buat workspace AlphaLeaders dengan seluruh tim (12 orang)"**.
 4. Klik **Setup sekarang**.
@@ -78,7 +93,7 @@ Akun yang dibuat:
 
 ## Bagian D: Owner (Coach Ferly), sekitar 15 menit
 
-1. Buka link website, login `ferly@alphaleaders.id` dengan password sekali pakai, lalu buat password sendiri.
+1. Buka https://lightech.co.id/alpha/, login `ferly@alphaleaders.id` dengan password sekali pakai, lalu buat password sendiri.
 2. **Settings → Paste dari Excel**:
    - Di file Investment Matrix, blok baris program (kolom Program sampai Inner Circle), copy, lalu paste.
    - ✅ Cek: 8 program dikenali.
@@ -86,37 +101,44 @@ Akun yang dibuat:
 4. **Team & Access**:
    - Ganti email placeholder `@alphaleaders.id` dengan email asli tiap orang. Email ini dipakai untuk login.
 5. Kirim ke tiap orang lewat **WA pribadi** (bukan grup), hanya bagiannya sendiri:
-   - link website
+   - link https://lightech.co.id/alpha/
    - email masing-masing
    - password sekali pakai masing-masing
 
    Saat login pertama, setiap orang wajib membuat password sendiri.
 6. Opsional: **Settings → Lead capture form → Form is live**.
-   - Link form: `<link website>?form=alphaleaders&src=Instagram`
+   - Link form: `https://lightech.co.id/alpha/?form=alphaleaders&src=Instagram`
    - Ganti `src` per kampanye supaya sumber lead tercatat.
 
 ## Link yang perlu diingat
 
 | Untuk | Link |
 |---|---|
-| Tim AlphaLeaders | `<link website>` |
-| Form lead publik | `<link website>?form=alphaleaders&src=<kampanye>` |
-| Lightech Console | `<link website>#lightech` (login Super Admin dari Bagian C) |
-| Cek kesehatan API | `<Endpoint URL>` (GET) |
+| Tim AlphaLeaders | `https://lightech.co.id/alpha/` |
+| Form lead publik | `https://lightech.co.id/alpha/?form=alphaleaders&src=<kampanye>` |
+| Lightech Console | `https://lightech.co.id/alpha/#lightech` (login Super Admin dari Bagian C) |
+| Cek kesehatan API | `https://<project-ref>.supabase.co/functions/v1/api` |
 | Data mentah (read-only, untuk BI/report) | Supabase → **Table Editor** → `leads`, `sessions`, `clients`, `audit_log` |
 
 ## Update versi berikutnya
 
-- **Website**: otomatis. Setiap merge ke `main`, Vercel build ulang sendiri.
-- **API**: kalau `supabase/functions/api/index.ts` berubah, tempel ulang di editor function `api` lalu **Deploy**.
-- **Database**: file SQL baru di `supabase/migrations/` dijalankan di **SQL Editor**. Data lama tidak tersentuh.
+Cukup minta lewat prompt ke Claude Code (vibecoding). Claude mengubah kode, menjalankan test, lalu merge ke `main`.
+GitHub Actions otomatis:
+1. menjalankan semua test di PostgreSQL + browser (gagal = tidak ada yang di-deploy)
+2. menjalankan migrasi database dan deploy API ke Supabase
+3. upload website ke `lightech.co.id/alpha` dan mengecek versi live-nya
+
+Data lama tidak tersentuh. Versi website sebelumnya disimpan sebagai `alpha__prev`.
+**Rollback 1 klik**: GitHub → **Actions** → **Test & deploy** → **Run workflow** → action `rollback-web`.
 
 ## Kalau ada masalah
 
 | Gejala | Penyebab & solusi |
 |---|---|
-| "Server tidak bisa dihubungi" | `API_URL` di Vercel salah, atau Verify JWT masih ON (A.5). Perbaiki, lalu Vercel → **Redeploy**. |
-| Error 401 saat buka Endpoint URL | Verify JWT masih ON. Matikan (A.5). |
+| Job **api** / **web** di Actions bertuliskan "skipped / not configured" | Secret belum lengkap (Bagian A.3). Lengkapi, lalu **Run workflow**. |
+| Job **web** gagal di "Check the live site" | `FTP_DIR` tidak menunjuk ke folder yang dilayani `lightech.co.id/alpha`. Hostinger biasanya `domains/lightech.co.id/public_html/alpha`, IDwebhost/cPanel `public_html/alpha`. |
+| Job **web** gagal koneksi FTP (certificate) | Tambah variable `FTP_TLS_VERIFY` = `no` (sertifikat FTP shared hosting sering atas nama server, bukan domain). |
+| "Server tidak bisa dihubungi" di app | Lihat job **api** di Actions. Kalau hijau, buka `https://<project-ref>.supabase.co/functions/v1/api` harus `{"ok":true}`. |
 | "Wrong setup code" | Salah ketik. Setelah 5× salah, terkunci 15 menit. Kode bisa dilihat lagi: SQL Editor → `select code from app_setup;` |
 | Halaman setup tidak muncul lagi | Normal: setup hanya sekali. Langsung login. |
 | Login gagal 5× | Akun dikunci 15 menit (pengaman brute force). Tunggu, atau Owner reset password di Team & Access. |
@@ -137,17 +159,67 @@ Akun yang dibuat:
 
 ---
 
-## Prompt untuk Claude in Chrome
+## Prompt untuk Claude in Chrome (Bagian A)
 
-Salin ke Claude in Chrome. Login Supabase/Vercel dilakukan sendiri bila diminta.
+Salin ke Claude in Chrome. Login ke Supabase, hosting, dan GitHub dilakukan sendiri bila diminta.
 
 ```
-Kerjakan GO-LIVE.md di repo oasys-lightrees/mentoring_app, Bagian A dan B saja:
-1. supabase.com/dashboard: buat project "lightech-mentoring", region Singapore, generate database password (tampilkan ke saya untuk disimpan).
-2. SQL Editor: jalankan isi file dari link "Skema database" di GO-LIVE.md. Laporkan baris SETUP CODE ke saya.
-3. Edge Functions → Deploy a new function → Via Editor, nama "api", tempel isi link "Kode API", deploy. Matikan Verify JWT. Salin Endpoint URL.
-4. Buka Endpoint URL, pastikan JSON {"ok":true,...}.
-5. vercel.com/new: import oasys-lightrees/mentoring_app, env API_URL = Endpoint URL, deploy. Buka hasilnya, pastikan halaman "First-time setup" muncul.
-6. Supabase Edge Functions → Secrets: ALLOWED_ORIGINS = domain Vercel.
-Jangan isi halaman First-time setup. Itu saya kerjakan sendiri. Laporkan: link website, Endpoint URL, SETUP CODE.
+Kerjakan GO-LIVE.md Bagian A di repo oasys-lightrees/mentoring_app:
+1. supabase.com/dashboard: buat project "lightech-mentoring", region Singapore, generate database password.
+   Catat project-ref dari URL. Buat access token "github-deploy" di Account → Access Tokens.
+2. Cari di panel hosting mana (IDwebhost atau Hostinger) domain lightech.co.id aktif. Buat akun FTP untuk deploy.
+   Cari folder yang dilayani lightech.co.id/alpha (relatif dari root akun FTP).
+3. github.com/oasys-lightrees/mentoring_app/settings/secrets/actions: isi secret SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD,
+   SUPABASE_PROJECT_REF, FTP_SERVER, FTP_USERNAME, FTP_PASSWORD. Isi variable FTP_DIR kalau bukan public_html/alpha.
+4. GitHub → Actions → "Test & deploy" → Run workflow (main). Tunggu semua hijau. Kalau ada job merah, laporkan pesan errornya.
+5. Buka https://lightech.co.id/alpha/ dan pastikan halaman "First-time setup" muncul. Jangan diisi.
+Jangan tampilkan password/token di chat. Laporkan: project-ref, hosting yang dipakai, FTP_DIR, status Actions.
 ```
+
+## Lampiran: jalur manual (tanpa GitHub Actions)
+
+Pakai hanya kalau Actions tidak bisa dipakai.
+
+| File | Link (versi terkunci) |
+|---|---|
+| Skema database (SQL) | https://raw.githubusercontent.com/oasys-lightrees/mentoring_app/e5a8fc647c5c8e4f1dc468c638143202ff9fa5d1/supabase/migrations/20261007000000_init.sql |
+| Kode API (Edge Function) | https://raw.githubusercontent.com/oasys-lightrees/mentoring_app/e5a8fc647c5c8e4f1dc468c638143202ff9fa5d1/supabase/functions/api/index.ts |
+
+### M1. Database & API lewat dashboard Supabase
+
+1. Buka **https://supabase.com/dashboard** → login (pakai akun GitHub paling cepat).
+2. **New project**:
+   - Name: `lightech-mentoring`
+   - Database password: klik **Generate**, simpan di password manager
+   - Region: **Southeast Asia (Singapore)**, paling dekat ke Indonesia
+   - Klik **Create new project**, tunggu ±2 menit.
+3. Menu kiri **SQL Editor** → **New query**.
+   - Buka link **Skema database** di atas, **Ctrl+A**, **Ctrl+C**.
+   - Tempel di editor, klik **Run**.
+   - ✅ Cek: di bawah muncul satu baris **`SETUP CODE: XXXXXXXXXXXX`**. Catat kodenya. Kode ini dipakai sekali di Bagian C.
+4. Menu kiri **Edge Functions** → **Deploy a new function** → **Via Editor**.
+   - Nama function: **`api`** (huruf kecil, persis).
+   - Hapus contoh kode, lalu tempel isi link **Kode API** di atas.
+   - Klik **Deploy function**.
+5. Masih di function `api` → tab **Details / Settings** → matikan **Verify JWT** (Enforce JWT verification) → **Save**.
+   App melakukan login sendiri (email + password), jadi JWT Supabase tidak dipakai.
+6. Salin **Endpoint URL** function, bentuknya `https://<project-ref>.supabase.co/functions/v1/api`.
+   - ✅ Cek: buka URL itu di browser. Yang muncul: `{"ok":true,"service":"lightech-mentoring-app","version":"2.0.0"}`.
+
+
+### M2. Website di Vercel (alternatif tanpa hosting sendiri)
+
+1. Buka **https://vercel.com/new** → login dengan GitHub.
+2. **Import** repository **`oasys-lightrees/mentoring_app`**.
+3. Di layar konfigurasi:
+   - Framework Preset: **Other** (build otomatis terbaca dari `vercel.json`)
+   - **Environment Variables**: Name `API_URL`, Value = Endpoint URL dari A.6
+   - Klik **Deploy**.
+4. Setelah selesai, buka domain Vercel-nya (mis. `https://mentoring-app-xxx.vercel.app`).
+   - ✅ Cek: yang muncul halaman **First-time setup**.
+5. Opsional, tapi disarankan: kunci API hanya untuk website ini.
+   Supabase → **Edge Functions → Secrets** → tambah `ALLOWED_ORIGINS` = domain Vercel (mis. `https://mentoring-app-xxx.vercel.app`, tanpa `/` di akhir).
+
+
+### M3. Website ke lightech.co.id/alpha tanpa Actions
+Lihat [DEPLOY.md](DEPLOY.md) (upload zip lewat File Manager).
