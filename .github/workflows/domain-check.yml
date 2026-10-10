@@ -1,0 +1,32 @@
+# Read-only public lookups (WHOIS, DNS, HTTP headers) for the production domain: where it is registered and hosted.
+# Run from the Actions tab whenever hosting questions come up.
+name: Domain check
+on:
+  workflow_dispatch:
+  push:
+    branches: ['ccr-*']
+    paths: ['.github/workflows/domain-check.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      DOMAIN: lightech.co.id
+    steps:
+      - run: sudo apt-get install -y -qq whois dnsutils > /dev/null
+      - name: WHOIS (registrar)
+        run: whois "$DOMAIN" | grep -Ei 'registrar|name server|status|created|expir|updated' || true
+      - name: DNS
+        run: |
+          for t in NS A AAAA MX TXT; do echo "== $t"; dig +short "$DOMAIN" $t; done
+          echo "== www"; dig +short "www.$DOMAIN"
+          echo "== ftp"; dig +short "ftp.$DOMAIN"
+      - name: Who owns the web server IP
+        run: |
+          for ip in $(dig +short "$DOMAIN" A); do echo "== $ip"; dig +short -x "$ip"; whois "$ip" | grep -Ei '^(org-?name|orgname|netname|descr|country|owner)' | head -8; done
+      - name: HTTP
+        run: |
+          for u in "https://$DOMAIN/" "https://$DOMAIN/alpha/"; do echo "== $u"; curl -sS -o /dev/null -D - -m 20 "$u" | grep -Ei '^(HTTP|server|x-powered-by|platform|panel|location|x-litespeed|x-turbo)' || true; done
+      - name: FTP banner
+        run: timeout 15 bash -c "exec 3<>/dev/tcp/ftp.$DOMAIN/21; head -c 200 <&3" || echo "no FTP banner"
