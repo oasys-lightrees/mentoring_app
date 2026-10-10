@@ -393,3 +393,11 @@ tr.clickable:hover td { background: var(--hover); }
 :root[data-noir] .chart .bar { fill: color-mix(in srgb, var(--gold) 45%, var(--card)); }
 :root[data-noir] .chart .bar-cur { fill: var(--gold); }
 :root[data-noir] .meter span { background: var(--gold); }
+/* Settings quick picks (terminology & funnel presets) */
+.quick-terms { display: flex; flex-direction: column; gap: 6px; }
+.quick-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.quick-row > .small { min-width: 130px; }
+.chip-btn { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.chip-btn:hover { border-color: var(--accent); }
+.chip-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.imp-banner.test-banner { background: var(--info-bg); color: var(--info); }

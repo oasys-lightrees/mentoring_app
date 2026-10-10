@@ -4,9 +4,9 @@
   "private": true,
   "description": "White-label Lead → Deal → Client CRM for coaching & mentoring companies (Lightech platform). Supabase (PostgreSQL) backend.",
   "scripts": {
-    "test": "node scripts/build-edge.mjs --check && node tests/server.test.js && node tests/edge-bundle.test.js && node tests/e2e-golive.js && node tests/e2e-server.js && node tests/e2e-features.js && node tests/e2e-local-cloud.js local && node tests/e2e-local-cloud.js cloud",
+    "test": "node scripts/build-edge.mjs --check && node tests/server.test.js && node tests/edge-bundle.test.js && node tests/e2e-golive.js && node tests/e2e-uat.js && node tests/e2e-server.js && node tests/e2e-features.js && node tests/e2e-local-cloud.js local && node tests/e2e-local-cloud.js cloud",
     "test:server": "node tests/server.test.js && node tests/edge-bundle.test.js",
-    "test:e2e": "node tests/e2e-golive.js && node tests/e2e-server.js && node tests/e2e-features.js && node tests/e2e-local-cloud.js local && node tests/e2e-local-cloud.js cloud",
+    "test:e2e": "node tests/e2e-golive.js && node tests/e2e-uat.js && node tests/e2e-server.js && node tests/e2e-features.js && node tests/e2e-local-cloud.js local && node tests/e2e-local-cloud.js cloud",
     "build:edge": "node scripts/build-edge.mjs",
     "build:deploy": "node scripts/build-deploy.mjs",
     "build:artifact": "node scripts/build-artifact.mjs"
