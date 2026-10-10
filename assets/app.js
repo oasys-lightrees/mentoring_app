@@ -737,6 +737,27 @@
   // Lookups, labels, RBAC
   // =====================================================================
   const L = (k) => (S.config.labels && S.config.labels[k]) || k;
+  const testMark = () => (S && S.config && S.config.testMode ? { demo: true } : {}); // UAT records, removed with "Delete example & test data"
+  // Owner-editable wording: one-click presets plus suggestions; every label stays free text.
+  const TERM_PRESETS = [
+    { en: 'Session called', id: 'Sebutan sesi', keys: ['session', 'sessions'], options: [['Session', 'Sessions'], ['Class', 'Classes'], ['Meeting', 'Meetings'], ['Sesi', 'Sesi'], ['Kelas', 'Kelas']] },
+    { en: 'Mentor called', id: 'Sebutan mentor', keys: ['mentor', 'mentors'], options: [['Coach', 'Coaches'], ['Mentor', 'Mentors'], ['Trainer', 'Trainers'], ['Consultant', 'Consultants']] },
+    { en: 'Client called', id: 'Sebutan klien', keys: ['client', 'clients'], options: [['Client', 'Clients'], ['Member', 'Members'], ['Klien', 'Klien'], ['Peserta', 'Peserta']] }
+  ];
+  const LABEL_SUGGEST = {
+    lead: ['Lead', 'Prospect', 'Calon klien'], leads: ['Leads', 'Prospects', 'Calon klien'],
+    client: ['Client', 'Member', 'Klien', 'Peserta'], clients: ['Clients', 'Members', 'Klien', 'Peserta'],
+    mentor: ['Coach', 'Mentor', 'Trainer', 'Consultant'], mentors: ['Coaches', 'Mentors', 'Trainers', 'Consultants'],
+    session: ['Session', 'Class', 'Meeting', 'Webinar', 'Workshop', 'Sesi', 'Kelas'], sessions: ['Sessions', 'Classes', 'Meetings', 'Webinars', 'Workshops', 'Sesi', 'Kelas'],
+    program: ['Program', 'Package', 'Paket'], programs: ['Programs', 'Packages', 'Paket'], owner: ['BD / Sales', 'Sales', 'Account Manager', 'PIC']
+  };
+  const FUNNEL_PRESETS = [
+    { label: 'COV → ABM → ABE', stages: ['New Lead', 'COV Call (15m)', 'ABM Mapping (2–3h)', 'ABE Closing (2h)'], types: ['', 'COV Call', 'ABM Assessment & Mapping', 'ABE Proposal & Closing'] },
+    { label: 'Pre-Session → Diagnostics → Closing', stages: ['New Lead', 'Pre-Session', 'Diagnostics', 'Closing'], types: ['', 'Pre-Session', 'Diagnostics Session', 'Closing Session'] },
+    { label: 'Webinar → Assessment → Proposal', stages: ['New Lead', 'Webinar', 'Assessment', 'Proposal'], types: ['', 'Webinar', 'Assessment', 'Proposal Meeting'] }
+  ];
+  const STAGE_SUGGEST = ['New Lead', 'Contacted', 'COV Call (15m)', 'Pre-Session', 'Webinar', 'Discovery Call', 'ABM Mapping (2–3h)', 'Diagnostics', 'Assessment', 'Business Mapping', 'ABE Closing (2h)', 'Proposal', 'Negotiation', 'Closing'];
+  const STYPE_SUGGEST = ['COV Call', 'Pre-Session', 'Webinar', 'Discovery Call', 'ABM Assessment & Mapping', 'Diagnostics Session', 'Assessment', 'ABE Proposal & Closing', 'Proposal Meeting', 'Closing Session', 'Coaching Session', 'Class', 'Review / Induction'];
   const stages = () => S.config.stages;
   const stage = (id) => stages().find((s) => s.id === id) || { id, name: id || '—', color: '#94a3b8', type: 'open', prob: 0, sla: 0 };
   const stageIdx = (id) => stages().findIndex((s) => s.id === id);
@@ -760,10 +781,10 @@
   };
   const termLabel = (t) => (TERMS().find((x) => x[0] === t) || [, '—'])[1];
   const termOptions = (p, sel) => TERMS().filter(([t]) => p.terms[t]).map(([t, label]) => `<option value="${t}" ${t === sel ? 'selected' : ''}>${esc(label)} · ${esc(fmtMoneyShort(p.terms[t]))}/${tr('mo', 'bln')} · ${tr('total', 'total')} ${esc(fmtMoneyShort(contractValue(p, t)))}</option>`).join('');
-  // Payment schedule: the total split into n equal payments, n per year; a commitment paid at the ABM session comes off the first one.
+  // Payment schedule: the total split into n equal payments, n per year; a commitment paid upfront comes off the first one.
   function paymentSchedule(total, n, startISO, commitment) {
     const out = []; const per = Math.round(total / n); const pay = Math.min(Number(commitment) || 0, per);
-    if (pay) out.push({ label: tr('Commitment (ABM session)', 'Commitment (sesi ABM)'), due: '', amount: pay });
+    if (pay) out.push({ label: tr('Commitment (paid upfront)', 'Commitment (dibayar di awal)'), due: '', amount: pay });
     for (let k = 0; k < n; k++) out.push({ label: String(k + 1), due: startISO ? addMonths(startISO, (12 / n) * k) : '', amount: (k === n - 1 ? total - per * (n - 1) : per) - (k === 0 ? pay : 0) });
     return out;
   }
@@ -1070,8 +1091,11 @@
     const back = $('#console-back');
     back.hidden = !imp; back.textContent = '← Lightech Console'; back.onclick = backToConsole;
     const ban = $('#imp-banner');
-    ban.hidden = !imp;
+    const testing = !!S.config.testMode;
+    ban.hidden = !imp && !testing;
+    ban.classList.toggle('test-banner', testing && !imp);
     if (imp) ban.textContent = tr(`Lightech mode: you are viewing ${S.name} as its Owner. Changes are saved to this company.`, `Mode Lightech: Anda melihat ${S.name} sebagai Owner. Perubahan tersimpan ke company ini.`);
+    else if (testing) ban.textContent = tr(`🧪 TESTING MODE: new ${L('leads')} are marked as test data and can be deleted in one click (Settings → Data).`, `🧪 MODE TESTING: ${L('leads')} baru ditandai sebagai data testing dan bisa dihapus sekali klik (Settings → Data).`);
     $('#btn-add-lead').hidden = !isStaff();
     $('#btn-add-session').hidden = !can.editSession();
     views[v]();
@@ -1998,14 +2022,19 @@
         <div class="card">
           <div class="card-title">${tr('Terminology', 'Istilah')}</div>
           <div class="hint">${tr('Mentor → Coach / Teacher / PT / Consultant. Session → Class / Webinar / Workshop. The whole app follows.', 'Mentor → Coach / Teacher / PT / Consultant. Session → Class / Webinar / Workshop. Semua tampilan ikut berubah.')}</div>
-          <div class="grid-2 mt">${labelKeys.map(([k, en, id]) => `<label class="field"><span>${esc(tr(en, id))}</span><input id="set-label-${k}" data-label-key="${k}" value="${esc(c.labels[k] || '')}"></label>`).join('')}</div>
+          <div class="quick-terms mt">${TERM_PRESETS.map((g, gi) => `<div class="quick-row"><span class="small muted">${esc(tr(g.en, g.id))}</span>${g.options.map((o, oi) => `<button type="button" class="chip-btn ${c.labels[g.keys[0]] === o[0] ? 'active' : ''}" data-term-preset="${gi}:${oi}">${esc(o[0])}</button>`).join('')}</div>`).join('')}</div>
+          <div class="grid-2 mt">${labelKeys.map(([k, en, id]) => `<label class="field"><span>${esc(tr(en, id))}</span><input id="set-label-${k}" data-label-key="${k}" list="dl-label-${k}" value="${esc(c.labels[k] || '')}"></label>`).join('')}</div>
+          ${labelKeys.map(([k]) => `<datalist id="dl-label-${k}">${(LABEL_SUGGEST[k] || []).map((x) => `<option value="${esc(x)}">`).join('')}</datalist>`).join('')}
         </div>
         <div class="card full">
           <div class="card-head"><div><div class="card-title">${tr('Funnel stages', 'Stage funnel')}</div><div class="hint">${tr('Order = funnel flow. Prob% drives the weighted pipeline. SLA = max days in a stage before it is flagged idle.', 'Urutan = alur funnel. Prob% untuk weighted pipeline. SLA = maksimal hari di stage sebelum ditandai diam.')}</div></div><button class="btn btn-sm" type="button" id="add-stage">+ Stage</button></div>
+          <div class="quick-row mt"><span class="small muted">${tr('Quick funnel names', 'Nama funnel cepat')}</span>${FUNNEL_PRESETS.map((f, fi) => `<button type="button" class="chip-btn" data-funnel-preset="${fi}">${esc(f.label)}</button>`).join('')}</div>
+          <datalist id="dl-stage-names">${STAGE_SUGGEST.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
+          <datalist id="dl-stype-names">${STYPE_SUGGEST.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
           <div class="table-wrap"><table class="edit-table"><thead><tr><th></th><th>${tr('Name', 'Nama')}</th><th>${tr('Colour', 'Warna')}</th><th>Prob %</th><th>SLA (${tr('days', 'hari')})</th><th>${tr('Type', 'Tipe')}</th><th>${esc(L('leads'))}</th><th></th></tr></thead><tbody>
             ${c.stages.map((s, i) => `<tr>
               <td>${s.type === 'open' && i > 0 ? `<button class="btn btn-sm" type="button" data-stage-up="${i}" aria-label="Up">↑</button>` : ''}</td>
-              <td><input id="stg-name-${i}" data-stage="${i}" data-k="name" value="${esc(s.name)}" style="min-width:150px"></td>
+              <td><input id="stg-name-${i}" data-stage="${i}" data-k="name" list="dl-stage-names" value="${esc(s.name)}" style="min-width:150px"></td>
               <td><input id="stg-color-${i}" type="color" data-stage="${i}" data-k="color" value="${esc(s.color)}"></td>
               <td><input id="stg-prob-${i}" type="number" min="0" max="100" data-stage="${i}" data-k="prob" value="${esc(s.prob)}" style="width:72px"></td>
               <td><input id="stg-sla-${i}" type="number" min="0" data-stage="${i}" data-k="sla" value="${esc(s.sla)}" style="width:72px" ${s.type !== 'open' ? 'disabled' : ''}></td>
@@ -2019,7 +2048,7 @@
           <div class="card-head"><div><div class="card-title">${esc(tr(`${L('session')} types`, `Jenis ${L('session')}`))}</div><div class="hint">${esc(tr(`Link a type to a funnel stage: booking it moves the ${L('lead')} to that stage. Leave empty for delivery sessions after the deal.`, `Hubungkan ke stage funnel: saat dijadwalkan, ${L('lead')} otomatis maju ke stage itu. Kosongkan untuk sesi delivery setelah deal.`))}</div></div><button class="btn btn-sm" type="button" id="add-stype">+ ${tr('Type', 'Jenis')}</button></div>
           <div class="table-wrap"><table class="edit-table"><thead><tr><th>${tr('Name', 'Nama')}</th><th>${tr('Duration (min)', 'Durasi (mnt)')}</th><th>${tr('Colour', 'Warna')}</th><th>${tr('Funnel stage', 'Stage funnel')}</th><th></th></tr></thead><tbody>
             ${c.sessionTypes.map((t, i) => `<tr>
-              <td><input id="st-name-${i}" data-stype="${i}" data-k="name" value="${esc(t.name)}" style="min-width:150px"></td>
+              <td><input id="st-name-${i}" data-stype="${i}" data-k="name" list="dl-stype-names" value="${esc(t.name)}" style="min-width:150px"></td>
               <td><input id="st-dur-${i}" type="number" min="0" data-stype="${i}" data-k="duration" value="${esc(t.duration)}" style="width:90px"></td>
               <td><input id="st-color-${i}" type="color" data-stype="${i}" data-k="color" value="${esc(t.color)}"></td>
               <td><select id="st-stage-${i}" data-stype="${i}" data-k="stageId">${options(openStages(), t.stageId, (s) => s.id, (s) => s.name, tr('— Delivery (after the deal) —', '— Delivery (setelah deal) —'))}</select></td>
@@ -2076,8 +2105,10 @@
             <label class="btn">Restore JSON<input type="file" id="imp-json" accept="application/json,.json" hidden></label>
             <button class="btn" type="button" id="exp-csv">CSV ${esc(L('leads'))}</button>
           </div>
+          <label class="check mt"><input type="checkbox" id="set-testmode" ${c.testMode ? 'checked' : ''}> ${tr('Testing mode (UAT): mark new data as test data', 'Mode testing (UAT): tandai data baru sebagai data testing')}</label>
+          <div class="hint">${tr('Switch off before real data. "Delete example & test data" removes only marked records.', 'Matikan sebelum input data asli. "Hapus data contoh & testing" hanya menghapus data yang ditandai.')}</div>
           <div class="row mt">
-            ${demoCount ? `<button class="btn btn-danger" type="button" id="clear-demo">${tr('Delete example data', 'Hapus data contoh')} (${demoCount})</button>` : ''}
+            ${demoCount ? `<button class="btn btn-danger" type="button" id="clear-demo">${tr('Delete example & test data', 'Hapus data contoh & testing')} (${demoCount})</button>` : ''}
             <button class="btn" type="button" id="reset-demo">${tr('Add example data', 'Isi data contoh')}</button>
             <button class="btn btn-danger" type="button" id="clear-data">${tr('Clear all data', 'Kosongkan semua data')}</button>
           </div>
@@ -2089,7 +2120,27 @@
     $$('[data-comm]').forEach((el) => el.onchange = () => { c.commission[el.dataset.comm] = Math.max(0, Number(el.value) || 0); save(); toast(tr('Saved', 'Tersimpan')); });
     $('#set-publicform').onchange = (e) => { c.publicForm = e.target.checked; save(); renderSettings(); toast(c.publicForm ? tr('Lead form is live', 'Form lead aktif') : tr('Lead form switched off', 'Form lead dimatikan')); };
     if ($('#copy-form')) $('#copy-form').onclick = async () => { const v = $('#form-link').value; try { await navigator.clipboard.writeText(v); toast(tr('Link copied', 'Link disalin')); } catch (e) { $('#form-link').select(); toast(tr('Select and copy the link', 'Pilih & salin link-nya')); } };
+    $('#set-testmode').onchange = (e) => { c.testMode = e.target.checked; save(); renderMain(); toast(c.testMode ? tr('Testing mode on', 'Mode testing aktif') : tr('Testing mode off', 'Mode testing mati')); };
     $('#set-demologin').onchange = (e) => { c.demoLogin = e.target.checked; save(); toast(c.demoLogin ? tr('Demo sign-in on', 'Login demo aktif') : tr('Demo sign-in off', 'Login demo dimatikan')); };
+    $$('[data-term-preset]').forEach((b) => b.onclick = () => {
+      const [gi, oi] = b.dataset.termPreset.split(':').map(Number); const g = TERM_PRESETS[gi]; const o = g.options[oi];
+      g.keys.forEach((k, n) => { c.labels[k] = o[n]; });
+      reBrand(); renderMain(); toast(tr('Terminology updated', 'Istilah diperbarui'));
+    });
+    $$('[data-funnel-preset]').forEach((b) => b.onclick = () => {
+      const f = FUNNEL_PRESETS[Number(b.dataset.funnelPreset)];
+      const open = c.stages.filter((s) => s.type === 'open');
+      const plan = open.map((s, k) => [s, f.stages[k]]).filter(([, n]) => n);
+      const lines = plan.map(([s, n]) => `${s.name} → ${n}`).join(' · ');
+      confirmDialog(tr('Rename the funnel?', 'Ganti nama funnel?'), lines + tr('. Leads stay in their stage; only names change.', '. Lead tetap di stage-nya; hanya nama yang berubah.'), tr('Rename', 'Ganti nama'), () => {
+        plan.forEach(([s, n], k) => {
+          s.name = n;
+          const ty = c.sessionTypes.find((x) => x.stageId === s.id);
+          if (ty && f.types[k]) ty.name = f.types[k];
+        });
+        save(); renderSettings(); toast(tr('Funnel renamed', 'Nama funnel diperbarui'));
+      });
+    });
     $$('[data-label-key]').forEach((el) => el.onchange = () => { c.labels[el.dataset.labelKey] = el.value || el.dataset.labelKey; reBrand(); renderMain(); toast(tr('Terminology updated', 'Istilah diperbarui')); });
     const num = (k, v) => (['prob', 'sla', 'duration', 'price', 'sessions', 'months'].includes(k) ? Number(v) || 0 : v);
     const bindRows = (attr, arr) => $$(`[data-${attr}]`).forEach((el) => el.onchange = () => { arr()[Number(el.dataset[attr])][el.dataset.k] = num(el.dataset.k, el.value); save(); toast(tr('Saved', 'Tersimpan')); });
@@ -2376,6 +2427,7 @@
       const nowIso = new Date().toISOString();
       if (isNew) {
         const nl = { id: uid('L'), name: v.name.trim(), company: v.company, phone: v.phone, email: v.email, source: v.source, ownerId, programId: v.programId, term: v.term || '', value: Number(v.value) || 0, stageId: v.stageId, nextAction: v.nextAction, nextActionDate: v.nextActionDate, notes: v.notes, createdAt: nowIso, updatedAt: nowIso, createdBy: me.id, history: [{ at: nowIso, from: null, to: v.stageId, note: 'Lead created', by: me.id }] };
+        Object.assign(nl, testMark());
         S.leads.unshift(nl);
         save(); toast(tr(`${nl.name} added to the pipeline`, `${nl.name} masuk pipeline`));
       } else {
@@ -2764,7 +2816,7 @@
       const nowIso = new Date().toISOString();
       parsed.ok.forEach((r, i) => {
         const at = new Date(Date.now() + i).toISOString();
-        S.leads.unshift({ id: uid('L'), name: r.name, phone: r.phone, email: r.email, company: r.company, source: r.source || 'Import', ownerId: sel === '__auto' ? pickOwner() : sel, programId: '', value: r.value, stageId: st.id,
+        S.leads.unshift({ ...testMark(), id: uid('L'), name: r.name, phone: r.phone, email: r.email, company: r.company, source: r.source || 'Import', ownerId: sel === '__auto' ? pickOwner() : sel, programId: '', value: r.value, stageId: st.id,
           nextAction: tr('WhatsApp follow-up', 'Follow up WA'), nextActionDate: todayISO(), notes: r.notes, createdAt: at, updatedAt: nowIso, createdBy: me.id, history: [{ at, from: null, to: st.id, note: 'Imported', by: me.id }] });
       });
       if (parsed.ok.some((r) => r.source && !S.config.sources.includes(r.source)) && isAdmin()) parsed.ok.forEach((r) => { if (r.source && !S.config.sources.includes(r.source)) S.config.sources.push(r.source); });
@@ -2850,7 +2902,7 @@
     const st = openStages()[0];
     const prog = program(v.programId);
     const nowIso = new Date().toISOString();
-    S.leads.unshift({ id: uid('L'), name: v.name.trim().slice(0, 80), phone: v.phone.trim(), email: v.email || '', company: v.company || '', source: S.config.sources.find((x) => x.toLowerCase() === String(v.source || '').toLowerCase()) || String(v.source || '').replace(/[^A-Za-z0-9 _.\-/&]/g, '').slice(0, 40) || 'Website form', ownerId: pickOwner(), programId: prog ? prog.id : '', value: prog ? Number(prog.price) || 0 : 0,
+    S.leads.unshift({ ...testMark(), id: uid('L'), name: v.name.trim().slice(0, 80), phone: v.phone.trim(), email: v.email || '', company: v.company || '', source: S.config.sources.find((x) => x.toLowerCase() === String(v.source || '').toLowerCase()) || String(v.source || '').replace(/[^A-Za-z0-9 _.\-/&]/g, '').slice(0, 40) || 'Website form', ownerId: pickOwner(), programId: prog ? prog.id : '', value: prog ? Number(prog.price) || 0 : 0,
       stageId: st.id, nextAction: 'WhatsApp follow-up (web form)', nextActionDate: todayISO(), notes: v.message || '', createdAt: nowIso, updatedAt: nowIso, createdBy: 'web-form', history: [{ at: nowIso, from: null, to: st.id, note: 'Web form', by: 'web-form' }] });
     if (Backend.flush) { await Backend.flush(S); if (Backend.idle) await Backend.idle(); } else Backend.save();
     if (Backend.close) Backend.close();

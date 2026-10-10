@@ -26,7 +26,7 @@ Demo credentials (Demo & Local modes, password `demo`): `super@lightech.co.id`, 
 
 | Area | What it does |
 |---|---|
-| **White-label tenants** | Per-company logo, icon, header colour (black & gold for AlphaLeaders), brand name, tagline, terminology (Mentor → Coach/Teacher/PT/Consultant, Session → Class/Webinar/Workshop), funnel stages, session types, programs, sources. The company Owner configures it in **Settings**. |
+| **White-label tenants** | One-click wording presets (Session → Class / Meeting, Mentor → Coach) and funnel presets (COV → ABM → ABE, Pre-Session → Diagnostics → Closing, Webinar → Assessment → Proposal), every name still free text. Testing mode marks UAT data for one-click removal. Per-company logo, icon, header colour (black & gold for AlphaLeaders), brand name, tagline, terminology (Mentor → Coach/Teacher/PT/Consultant, Session → Class/Webinar/Workshop), funnel stages, session types, programs, sources. The company Owner configures it in **Settings**. |
 | **Lightech Console** | Company list with users, leads, deals won, revenue, active clients, last activity. Create company from a template (with or without example data), set login code, suspend (blocks sign-in), reset owner password, delete. Manage Lightech admins. "Open" a company as its Owner with a visible Lightech banner. |
 | **Roles inside a company** | Owner, Admin/PA/CS, Senior Mentor, Mentor, Asst. Mentor (linked to a mentor), BD/Sales, Client. Menus and data scoped per role. |
 | **Lead & pipeline** | Lead form (duplicate WhatsApp check), drag-and-drop kanban, Won requires deal value, Lost requires a reason, stage SLA "idle" flag, next action + overdue. |
@@ -68,6 +68,7 @@ Needs Node 18+ and a local PostgreSQL (each test creates and drops its own datab
 - `tests/server.test.js`: 100 API checks on real PostgreSQL: tenant isolation, least-privilege visibility per role, Owner and Lightech-admin protection, input validation, lead form spam guards, lockout, suspension, first-time setup, PBKDF2 + legacy hashes, 25 concurrent saves without loss, RLS, append-only audit, session expiry, HTTP/CORS
 - `tests/edge-bundle.test.js`: the generated Edge Function file runs end to end (setup, sign-in, save, read)
 - `tests/e2e-golive.js`: 21 browser checks of day zero and day one exactly as AlphaLeaders will run it (built site → API → PostgreSQL)
+- `tests/e2e-uat.js`: 30 checks of the UAT scenario in [UAT.md](UAT.md): Owner renames wording and funnel, testing mode, lead → Pre-Session → Diagnostics → Closing → Deal Won, web form, Reports, one-click removal of test data
 - `tests/e2e-server.js`: 25 browser checks against the real server, including session expiry, live updates between users and offline start
 - `tests/e2e-features.js`: 30 checks for reports, compensation, import, calendar, investment matrix and the public lead form (desktop and phone)
 - `tests/e2e-local-cloud.js local|cloud`: white-label flows, console, language toggle, suspension, data integrity when re-opening a company

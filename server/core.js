@@ -280,6 +280,7 @@ function capture_(req) {
       notes: clip(req.message, 1000), createdAt: iso, updatedAt: iso, createdBy: 'web-form',
       history: [{ at: iso, from: null, to: first.id, note: 'Web form', by: 'web-form' }]
     };
+    if (cfg.testMode) lead.demo = true; // testing (UAT) period: removable with "Delete example & test data"
     writeDocs_(store, [{ op: 'set', path: base + '/leads/' + lead.id, data: lead }], 'web form');
     audit_('web form', w.id, 'capture', base + '/leads/' + lead.id, name + ' → ' + owner);
     c.put('capp:' + slug + ':' + digits, '1', 600);
